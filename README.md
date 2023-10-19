@@ -4,8 +4,8 @@ ZR4M stands for Zremesh for Maya. It tries to facilitate the retopology of garme
 
 # How to install it
 
-Copy this repo to the Maya script folder.
-Usually has this structure:
+Copy this repo, rename it to ZR4M and place it to the Maya script folder.
+Usually has this path:
 
 ```bash
 C:\Users\$USER\Documents\maya\$MAYA_VERSION\scripts\
