@@ -23,7 +23,7 @@ from PySide2.QtWidgets import (QApplication, QCheckBox, QDoubleSpinBox,
 from shiboken2 import wrapInstance
 
 from ZR4M.ZR4M import *
-from ZR4M_ui import *
+from ZR4M import *
 
 class Zr4mWindow(QMainWindow):
     """Create the main window"""
@@ -44,7 +44,9 @@ class Zr4mWindow(QMainWindow):
                             Qt.MSWindowsFixedSizeDialogHint)
 
         (self.master_dir, self.tmp_dir, self.start_zbrush_bridge_zsc,
-         self.start_zbrush_bridge_txt, self.zremesh_settings) = list_path
+         self.start_zbrush_bridge_txt, self.zremesh_settings,
+           self.disable_zremesh_bridge) = list_path
+
         self.output_maya_ascii = self.tmp_dir / "tmp_output_maya.ma"
         self.output_maya_goz = self.tmp_dir / "tmp_output_maya.GoZ"
         self.output_zbrush = self.tmp_dir / "tmp_output_zbrush.obj"
@@ -109,6 +111,11 @@ class Zr4mWindow(QMainWindow):
                 self.is_goz_installed = True
         else:
             self.is_goz_installed = True
+
+        if self.disable_zremesh_bridge:
+            self.groupbox_zremesh.hide()
+            self.groupbox_garment.setChecked(True)
+            self.groupbox_garment.setCheckable(False)
 
         print(f"{self.windowTitle()} window started")
 
@@ -1886,8 +1893,12 @@ class Zr4mWindow(QMainWindow):
                     cmds.scriptJob(kill=self.job_check_existences_posed_ref)
 
 
-def start_main_ui():
-    """Run the main UI. Checks if .zcr to launch has been compiled."""
+def start_main_ui(disable_zremesh_bridge: bool=False):
+    """Run the main UI.
+    Args:
+        disable_zremesh_bridge (bool, optional): Checks if .zcr to launch has been compiled.
+          Defaults to True.
+    """
     master_dir = Path(cmds.internalVar(userScriptDir=True)) / "ZR4M"
     tmp_dir = master_dir / "TMP"
     start_zbrush_bridge_zsc = master_dir / "start_zbrush_bridge.zsc"
@@ -1896,7 +1907,7 @@ def start_main_ui():
 
     if master_dir.is_dir() is False or tmp_dir.is_dir() is False:
         tmp_dir.mkdir(parents=True)
-    if start_zbrush_bridge_zsc.is_file() is False:
+    if start_zbrush_bridge_zsc.is_file() is False and disable_zremesh_bridge is False:
         with open(start_zbrush_bridge_txt, "w", encoding='utf-8') as file_to_compile:
             text_to_compile = ("[If,1,\n"
                                f"[VarDef, start_zbrush_bridge, \"{zremesh_settings}\"]\n"
@@ -1931,7 +1942,8 @@ def start_main_ui():
             tmp_dir,
             start_zbrush_bridge_zsc,
             start_zbrush_bridge_txt,
-            zremesh_settings
+            zremesh_settings,
+            disable_zremesh_bridge
         )
         Zr4mWindow(list_path).show()
 
