@@ -1892,8 +1892,8 @@ class Zr4mWindow(QMainWindow):
                 if cmds.scriptJob(exists=self.job_check_existences_posed_ref):
                     cmds.scriptJob(kill=self.job_check_existences_posed_ref)
 
-
-def start_main_ui(disable_zremesh_bridge: bool=False):
+# pylint: disable=invalid-name
+def start_ZR4M_ui(disable_zremesh_bridge: bool=False):
     """Run the main UI.
     Args:
         disable_zremesh_bridge (bool, optional): Checks if .zcr to launch has been compiled.
@@ -1948,4 +1948,4 @@ def start_main_ui(disable_zremesh_bridge: bool=False):
         Zr4mWindow(list_path).show()
 
 
-start_main_ui()
+start_ZR4M_ui()
