@@ -52,5 +52,3 @@ Has this values:
 - It's always associated to an edge selection that live on the shell border
 
 ![04_node_graph.png](./media/04_node_graph.png)
-
-Will always have the transform node of a label 
