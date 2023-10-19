@@ -83,24 +83,6 @@ class Zr4mWindow(QMainWindow):
             self.but_toggle_label.setEnabled(False)
             self.but_rebind_label.setEnabled(False)
 
-        # nice for usability. Can be removed if you do not like global variables.
-        if "last_posed_ref_geo_created" in globals():
-            try:
-                self.set_posed_ref_geo(last_posed_ref_geo_created)
-            except:  # pylint: disable=bare-except
-                pass
-        if "last_unwrapped_ref_geo_created" in globals():
-            current_scene_unit = cmds.currentUnit(query=True, linear=True)
-            try:
-                self.set_flat_ref_geo(last_unwrapped_ref_geo_created)
-            except:  # pylint: disable=bare-except
-                pass
-            finally:
-                cmds.currentUnit(linear=current_scene_unit)
-        if ("last_unwrapped_ref_geo_created" in globals()
-                or "last_posed_ref_geo_created" in globals()):
-            self.groupbox_garment.setChecked(True)
-
         if not cmds.pluginInfo('gozMaya', query=True, loaded=True):
             try:
                 cmds.loadPlugin('gozMaya')
@@ -394,26 +376,17 @@ class Zr4mWindow(QMainWindow):
         grid_layout_garment.setColumnStretch(0, 5)
         grid_layout_garment.setColumnStretch(1, 5)
 
-        if 0:  # NOTE change me if you want a more compact layout
-            button_set_ref_layout.addWidget(self.but_set_flat_ref)
-            button_set_ref_layout.addWidget(self.but_set_posed_ref)
+        button_set_ref_layout.addWidget(self.but_set_flat_ref)
+        button_set_ref_layout.addWidget(self.but_set_posed_ref)
 
-            button_transfer_attribute.addWidget(self.but_uv_from_flat_ref)
-            button_transfer_attribute.addWidget(
-                self.but_position_from_posed_ref)
+        button_transfer_attribute.addWidget(self.but_uv_from_flat_ref)
+        button_transfer_attribute.addWidget(
+            self.but_position_from_posed_ref)
 
-            flat_reference_label_layout.addWidget(self.label_flat)
-            posed_reference_label_layout.addWidget(self.label_posed)
-            spacer_item_00 = QSpacerItem(0, 0)
-            spacer_item_01 = QSpacerItem(0, 0)
-        else:
-            button_set_ref_layout.addWidget(self.but_set_flat_ref)
-            button_set_ref_layout.addWidget(self.but_set_posed_ref)
-
-            flat_reference_label_layout.addWidget(self.label_flat)
-            posed_reference_label_layout.addWidget(self.label_posed)
-            spacer_item_00 = QSpacerItem(0, 0)
-            spacer_item_01 = QSpacerItem(0, 0)
+        flat_reference_label_layout.addWidget(self.label_flat)
+        posed_reference_label_layout.addWidget(self.label_posed)
+        spacer_item_00 = QSpacerItem(0, 0)
+        spacer_item_01 = QSpacerItem(0, 0)
 
         grid_layout_garment.addItem(spacer_item_00, 0, 0)
         grid_layout_garment.addWidget(self.but_unwrap, 1, 0)
@@ -1048,8 +1021,8 @@ class Zr4mWindow(QMainWindow):
                                 r=1, g=1, b=1, a=1, colorDisplayOption=True)
 
                 if self.is_goz_installed:
-                    dummy_mat,dummy_SHA_GRP = create_material("dummy_mat")# goz chash if texture
-                    cmds.sets(duplicate_geometry, forceElement=dummy_SHA_GRP)
+                    dummy_mat,dummy_shader_group = create_material("dummy_mat")#goz chash if texture
+                    cmds.sets(duplicate_geometry, forceElement=dummy_shader_group)
                     cmds.select(duplicate_geometry)
                     cmds.gozMaya('-o', str(self.output_maya_goz)[:-4])
                     #cmds.gozMaya('-i', str(self.output_maya_goz)[:-4]) # Es. for import the .GoZ
@@ -1062,7 +1035,7 @@ class Zr4mWindow(QMainWindow):
 
                 cmds.delete(duplicate_geometry)
                 if self.is_goz_installed:
-                    cmds.delete(dummy_mat,dummy_SHA_GRP)
+                    cmds.delete(dummy_mat,dummy_shader_group)
 
                 self.uuid_last_maya_exported_geo = cmds.ls(
                     geometry_name, uuid=True)[0]
