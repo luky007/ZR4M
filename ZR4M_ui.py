@@ -8,7 +8,6 @@ import time
 from io import TextIOWrapper
 from pathlib import Path
 from random import random
-from typing import Union
 
 import maya.api.OpenMaya as om2
 import maya.cmds as cmds
@@ -1841,5 +1840,5 @@ def start_ZR4M_ui(disable_zremesh_bridge: bool=False):
         )
         Zr4mWindow(list_path).show()
 
-
-start_ZR4M_ui()
+if __name__ == "__main__":
+    start_ZR4M_ui()
