@@ -13,6 +13,10 @@ import maya.mel as mel
 
 def duplicate_mesh_without_set(
     geometry_to_duplicate: Union[str, List[str], Set[str]],
+    # The name_duplicate signature should be either:
+    # 1. name_duplicate: str = ""
+    # 2. name_duplicate: Optional[str] = None
+    # I'd probably go for the first option.
     name_duplicate: str = None,
 ) -> List[str]:
     """Utility function to duplicate a specified geometry without maintaining the set selection.
@@ -52,9 +56,15 @@ def return_curve_in_scene() -> Tuple[List[str], List[str]]:
     Returns:
         Tuple[List[str],List[str]]: the transform nodes list, the shapes nodes list.
     """
+    # Whenever possible, get the full path. For example,
+    # `cmds.ls(type="nurbsCurve", long=True)`. This will help avoid issues when
+    # you have multiple nodes with the same name.
     list_curve_shape_in_scene = cmds.ls(type="nurbsCurve")
     list_curve_in_scene = []
     for curve in list_curve_shape_in_scene:
+        # While the nurbsCurve should always have a parent transform, I'd still
+        # handle if the parent is None, because Maya will return None instead
+        # of an empty list in some cases.
         name_curve = cmds.listRelatives(
             curve, path=True, parent=True).pop()
         list_curve_in_scene.append(name_curve)
@@ -62,6 +72,17 @@ def return_curve_in_scene() -> Tuple[List[str], List[str]]:
     return list_curve_in_scene, list_curve_shape_in_scene
 
 
+# I'd avoid using overloads and just have the signature look something like
+# this:
+# from typing import Iterable, Optional
+# def get_index_component(components: Iterable[str]) -> Optional[str]:
+#     ...
+#
+# The reason is that the overload adds some complexity. Also, the return value
+# should avoid returning multiple different types if possible, because that
+# adds even more complexity. This is one reason why I'm not a fan of Maya's MEL
+# API because there's some functions where one function plus flags will return
+# a whole bunch of different types that you'll have to test for.
 @overload
 def get_index_component(input_component: str) -> int:
     pass
@@ -152,6 +173,10 @@ def add_full_name_to_index_component(
     return result
 
 
+# Personally, I believe that the argument `geometry_name` should be a string
+# only. If you want this to be a node, then `om2.MFnMesh` is good. In fact, it
+# is probably a good idea to have your system accept either a string or mesh,
+# but internally it is meshes only.
 def get_closest_vertex(
     geometry_name: Union[str, om2.MFnMesh],
     input_position: Tuple[int, int, int] = (0, 0, 0),
@@ -255,7 +280,11 @@ def raise_error_if_mesh_has_missing_uvs(geometry_name: str) -> None:
     ):
         message(
             f"Some part of the mesh: {geometry_name} appears to be without UV",
-            raise_error=True)
+            raise_error=True,
+        )
+        # This is returning False instead of None. Either the signature should
+        # be updated to be a boolean, or this might be better as a raised
+        # exception.
         return False
 
 
@@ -439,9 +468,15 @@ def find_overlapping_uvs(
     elif isinstance(geometry_name, om2.MFnMesh):
         mfn_mesh = geometry_name
 
+    # You have an if and elif case, what happens if the input is neither a str
+    # nor a MFnMesh? Also, you should probably use one or the other. I'd
+    # probably stick with MFnMesh, and have the outer function convert the
+    # input to MFnMesh.
     mfn_mesh.getUVs()
     u_array, v_array = mfn_mesh.getUVs()
 
+    # Pedantic, but you can do `if_output_bool:` instead of
+    # `if output_bool is True:`.
     if output_bool is True:  # when finds the first intersection return True right away
         list_uv = set()
         for u_cord, v_cord in zip(u_array, v_array):
@@ -609,6 +644,11 @@ def get_component_on_border(
             vertexes_edge = value_edge[1]
 
             for face in face_connected_to_edge:
+                # I'm getting a type error here. `dict_face.get` will either
+                # return the contents of the dict for that item, or None by
+                # default. I'd either do `dict_face[face]` and handle if this
+                # throws an exception, or do what you're doing and handle if
+                # the returned value is None or an empty list.
                 vertexes_face = dict_face.get(face)[0]
                 for i, vtx in enumerate(vertexes_face):
                     if vtx in vertexes_edge:
@@ -629,6 +669,8 @@ def get_component_on_border(
                 list_index_vtx_on_uv_border.update(vertexes_edge)
                 list_index_edge_on_uv_border.add(edge)
 
+        # Instead of returning a tuple, consider returning something like a
+        # dataclass with named attributes. This will make it easier to read.
         return (
             list_index_uv_on_border,
             list_index_vtx_on_uv_border,
@@ -901,6 +943,7 @@ def get_cord_uv_master_point_posed_mesh(
     dict_uv_vtx = {}
     for vtx, uv_indexes in dict_vtx_uv.items():
         for uv_index in uv_indexes:
+            # Pedantic, but you can do `if uv_index not in dict_uv_vtx:`
             if not uv_index in dict_uv_vtx:
                 dict_uv_vtx[uv_index] = len(uv_indexes), vtx
 
@@ -1299,6 +1342,8 @@ def calculate_path_between_two_uv_on_border(
 
         stop_while_loop = False
         counter = 0
+        # It doesn't look like `stop_while_loop` gets set to `True`. Is this
+        # intentional?
         while stop_while_loop is False:
             if counter == 10000:
                 raise RuntimeError("Counter safe limit")
@@ -1870,7 +1915,7 @@ def dict_cord_master_uv_points_from_posed_mesh(
     """From a posed geometry return a dictionary with all the coordinates of the master UV points.
 
     Args:
-        posed_ref_geometry (str): the posed ref version of the flatten geometry to bind.    
+        posed_ref_geometry (str): the posed ref version of the flatten geometry to bind.
 
     Returns:
         dict_cord_master_uv_point (Dict[int,Tuple[float,float]]): the key is the index of the uv
@@ -2093,7 +2138,7 @@ def bind_label_indicator(
         bool_unhide_updated_label (bool): unhide the just binded label curve.
         bool_just_return_found_label_curve (bool): just return the label curve to bind.
         bool_check_if_proper_input (bool): check if the input meshes are ok or not.
-        posed_ref_geometry (str): the posed ref version of the flatten geometry to bind.    
+        posed_ref_geometry (str): the posed ref version of the flatten geometry to bind.
         dict_cord_master_uv_point (Dict[int, Tuple[float, float]]): the key is the index of the uv
         master point found. The value is the corresponding coordinate of that point.
         list_perimeter_curve (Set[str]): the curve that live on the perimeter of the unwrapped
@@ -2581,7 +2626,7 @@ def create_material(
 
     Returns:
         Tuple[str,str]: the first str is the name of the material created and the second one
-        is the name of the shading group that is linked to the material. 
+        is the name of the shading group that is linked to the material.
     """
     material_name = cmds.shadingNode(
         type_material, name=material_name, asShader=True)
@@ -2601,7 +2646,7 @@ def ordered_vertex_loop_from_edge_loop(
         edge_loop_path (List[str]): the full name of the edges to order.
 
     Returns:
-        List[str]: all the vertexes that make the input edge loop path listed in topological order. 
+        List[str]: all the vertexes that make the input edge loop path listed in topological order.
     """
     # TODO: rewrite this
     shape_node = cmds.listRelatives(
