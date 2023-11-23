@@ -13,6 +13,10 @@ import maya.mel as mel
 
 def duplicate_mesh_without_set(
     geometry_to_duplicate: Union[str, List[str], Set[str]],
+    # The name_duplicate signature should be either:
+    # 1. name_duplicate: str = ""
+    # 2. name_duplicate: Optional[str] = None
+    # I'd probably go for the first option.
     name_duplicate: str = None,
 ) -> List[str]:
     """Utility function to duplicate a specified geometry without maintaining the set selection.
@@ -26,17 +30,20 @@ def duplicate_mesh_without_set(
     """
 
     if name_duplicate:
-        output_node = cmds.duplicate(
-            geometry_to_duplicate, name=name_duplicate)
+        output_node = cmds.duplicate(geometry_to_duplicate, name=name_duplicate)
     else:
         output_node = cmds.duplicate(geometry_to_duplicate)
 
     for node in output_node:
-        list_all_quick_set = (set(cmds.listSets(object=node, extendToShape=1))
-                              - set(cmds.listSets(
-                                    object=node, extendToShape=1, type=1)))
+        # I can't remember, but `extendToShape` and `type` are both bools. Use
+        # True/False instead of 1/0 to help readability.
+        list_all_quick_set = set(cmds.listSets(object=node, extendToShape=1)) - set(
+            cmds.listSets(object=node, extendToShape=1, type=1)
+        )
         for quick_set in list_all_quick_set:
             cmds.sets(f"{node}", rm=quick_set)
+            # If possible, use the long names instead of the short names.
+            # For example, can you easily guess what e means?
             cmds.sets(f"{node}.vtx[*]", rm=quick_set)
             cmds.sets(f"{node}.e[*]", rm=quick_set)
             cmds.sets(f"{node}.f[*]", rm=quick_set)
@@ -52,25 +59,39 @@ def return_curve_in_scene() -> Tuple[List[str], List[str]]:
     Returns:
         Tuple[List[str],List[str]]: the transform nodes list, the shapes nodes list.
     """
+    # Whenever possible, get the full path. For example,
+    # `cmds.ls(type="nurbsCurve", long=True)`. This will help avoid issues when
+    # you have multiple nodes with the same name.
     list_curve_shape_in_scene = cmds.ls(type="nurbsCurve")
     list_curve_in_scene = []
     for curve in list_curve_shape_in_scene:
-        name_curve = cmds.listRelatives(
-            curve, path=True, parent=True).pop()
+        # While the nurbsCurve should always have a parent transform, I'd still
+        # handle if the parent is None, because Maya will return None instead
+        # of an empty list in some cases.
+        name_curve = cmds.listRelatives(curve, path=True, parent=True).pop()
         list_curve_in_scene.append(name_curve)
 
     return list_curve_in_scene, list_curve_shape_in_scene
 
 
+# I'd avoid using overloads and just have the signature look something like
+# this:
+# from typing import Iterable, Optional
+# def get_index_component(components: Iterable[str]) -> Optional[str]:
+#     ...
+#
+# The reason is that the overload adds some complexity. Also, the return value
+# should avoid returning multiple different types if possible, because that
+# adds even more complexity. This is one reason why I'm not a fan of Maya's MEL
+# API because there's some functions where one function plus flags will return
+# a whole bunch of different types that you'll have to test for.
 @overload
 def get_index_component(input_component: str) -> int:
     pass
 
 
 @overload
-def get_index_component(
-    input_component: Union[List[str], Set[str]]
-) -> Set[int]:
+def get_index_component(input_component: Union[List[str], Set[str]]) -> Set[int]:
     pass
 
 
@@ -128,7 +149,13 @@ def add_full_name_to_index_component(
 
 
 def add_full_name_to_index_component(
-    input_index_component: Union[int, Union[List[int], Set[int],]],
+    input_index_component: Union[
+        int,
+        Union[
+            List[int],
+            Set[int],
+        ],
+    ],
     geometry_name: str,
     mode: str,
 ) -> Union[str, Set[str]]:
@@ -152,6 +179,10 @@ def add_full_name_to_index_component(
     return result
 
 
+# Personally, I believe that the argument `geometry_name` should be a string
+# only. If you want this to be a node, then `om2.MFnMesh` is good. In fact, it
+# is probably a good idea to have your system accept either a string or mesh,
+# but internally it is meshes only.
 def get_closest_vertex(
     geometry_name: Union[str, om2.MFnMesh],
     input_position: Tuple[int, int, int] = (0, 0, 0),
@@ -219,8 +250,7 @@ def message(text: str, raise_error: bool, stay_time: int = 3000) -> None:
         Defaults to 3000 ms.
     """
 
-    cmds.inViewMessage(message=text, pos="midCenter",
-                       fade=True, fadeStayTime=stay_time)
+    cmds.inViewMessage(message=text, pos="midCenter", fade=True, fadeStayTime=stay_time)
 
     if raise_error is True:
         cmds.error(text)
@@ -240,7 +270,8 @@ def raise_error_if_mesh_has_overlapping_uvs(geometry_name: str) -> None:
         # all the vtx and UV with a threshold of 0.
         message(
             f"The mesh: {geometry_name} appears to have overlapping UV. Unwrap the UV or sew cuts",
-            raise_error=True)
+            raise_error=True,
+        )
 
 
 def raise_error_if_mesh_has_missing_uvs(geometry_name: str) -> None:
@@ -255,7 +286,11 @@ def raise_error_if_mesh_has_missing_uvs(geometry_name: str) -> None:
     ):
         message(
             f"Some part of the mesh: {geometry_name} appears to be without UV",
-            raise_error=True)
+            raise_error=True,
+        )
+        # This is returning False instead of None. Either the signature should
+        # be updated to be a boolean, or this might be better as a raised
+        # exception.
         return False
 
 
@@ -269,7 +304,8 @@ def raise_error_if_mesh_has_one_uv_shell(geometry_name: str) -> None:
         # the script would just create a single line along all the UV border. its useless to do.
         message(
             f"The mesh: {geometry_name} needs to have at least two uv shell. Found only one",
-            raise_error=True)
+            raise_error=True,
+        )
         return False
 
 
@@ -282,8 +318,7 @@ def raise_error_if_mesh_has_unpairable_uv_border(geometry_name: str) -> None:
     if cmds.polyEvaluate(geometry_name, uv=True) == cmds.polyEvaluate(
         geometry_name, vertex=True
     ):
-        cmds.polyMergeVertex(
-            geometry_name, constructionHistory=False, distance=0.0)
+        cmds.polyMergeVertex(geometry_name, constructionHistory=False, distance=0.0)
         if cmds.polyEvaluate(geometry_name, uv=True) == cmds.polyEvaluate(
             geometry_name, vertex=True
         ):
@@ -292,7 +327,8 @@ def raise_error_if_mesh_has_unpairable_uv_border(geometry_name: str) -> None:
             cmds.select(geometry_name)
             message(
                 f"The UV island of the mesh: {geometry_name} are not connected in 3D space",
-                raise_error=True)
+                raise_error=True,
+            )
 
 
 def raise_error_if_mesh_is_unflat(geometry_name: str) -> None:
@@ -303,9 +339,9 @@ def raise_error_if_mesh_is_unflat(geometry_name: str) -> None:
     """
 
     bbox = cmds.exactWorldBoundingBox(geometry_name, calculateExactly=True)
-    size_x = abs(abs(bbox[3])-abs(bbox[0]))
-    size_y = abs(abs(bbox[4])-abs(bbox[1]))
-    size_z = abs(abs(bbox[5])-abs(bbox[2]))
+    size_x = abs(abs(bbox[3]) - abs(bbox[0]))
+    size_y = abs(abs(bbox[4]) - abs(bbox[1]))
+    size_z = abs(abs(bbox[5]) - abs(bbox[2]))
 
     threshold_absolute_size = 0.01
     list_flatten_axises = []
@@ -319,11 +355,13 @@ def raise_error_if_mesh_is_unflat(geometry_name: str) -> None:
     if len(list_flatten_axises) == 0:
         message(
             f"The mesh: {geometry_name} appears to not be flat {size_x,size_y,size_z}",
-            raise_error=True)
+            raise_error=True,
+        )
     if len(list_flatten_axises) > 1:
         message(
             f"The mesh: {geometry_name} is flat by {str(len(list_flatten_axises))} axises",
-            raise_error=True)
+            raise_error=True,
+        )
 
 
 def get_current_selected_mesh(
@@ -392,21 +430,19 @@ def flatten_selection_list(
 
     flat_list = set()
     for component in selection_list:
-        name_component,  index_part = component.split("[")
+        name_component, index_part = component.split("[")
         if not any(index_component in index_part for index_component in (":", "*")):
             flat_list.add(component)
             continue
         elif "*" in index_part:
-            raise TypeError(
-                f"The '*' expression is not supported. {component}")
+            raise TypeError(f"The '*' expression is not supported. {component}")
             # component_type = name_component[ name_component.rfind(".") + 1 :]
         elif ":" in index_part:
             index_start = component.find("[") + 1
             index_end = component.rfind(":")
 
             begin = int(component[index_start:index_end])
-            end = int(
-                component[index_end + 1: component.find("]", index_start)])
+            end = int(component[index_end + 1 : component.find("]", index_start)])
 
             for number in range(begin, end + 1):
                 flat_list.add(f"{name_component}[{number}]")
@@ -439,9 +475,14 @@ def find_overlapping_uvs(
     elif isinstance(geometry_name, om2.MFnMesh):
         mfn_mesh = geometry_name
 
-    mfn_mesh.getUVs()
+    # You have an if and elif case, what happens if the input is neither a str
+    # nor a MFnMesh? Also, you should probably use one or the other. I'd
+    # probably stick with MFnMesh, and have the outer function convert the
+    # input to MFnMesh.
     u_array, v_array = mfn_mesh.getUVs()
 
+    # Pedantic, but you can do `if_output_bool:` instead of
+    # `if output_bool is True:`.
     if output_bool is True:  # when finds the first intersection return True right away
         list_uv = set()
         for u_cord, v_cord in zip(u_array, v_array):
@@ -609,6 +650,11 @@ def get_component_on_border(
             vertexes_edge = value_edge[1]
 
             for face in face_connected_to_edge:
+                # I'm getting a type error here. `dict_face.get` will either
+                # return the contents of the dict for that item, or None by
+                # default. I'd either do `dict_face[face]` and handle if this
+                # throws an exception, or do what you're doing and handle if
+                # the returned value is None or an empty list.
                 vertexes_face = dict_face.get(face)[0]
                 for i, vtx in enumerate(vertexes_face):
                     if vtx in vertexes_edge:
@@ -629,6 +675,8 @@ def get_component_on_border(
                 list_index_vtx_on_uv_border.update(vertexes_edge)
                 list_index_edge_on_uv_border.add(edge)
 
+        # Instead of returning a tuple, consider returning something like a
+        # dataclass with named attributes. This will make it easier to read.
         return (
             list_index_uv_on_border,
             list_index_vtx_on_uv_border,
@@ -738,8 +786,7 @@ def get_neighbors_uv_on_border(
                 common_vtx_edges = vtx_other_edge & vtx_current_edge
                 common_vtx_edges = common_vtx_edges.pop()
 
-                face_connected_to_current_edge = dict_edge.get(current_edge_index)[
-                    0]
+                face_connected_to_current_edge = dict_edge.get(current_edge_index)[0]
                 face_connected_to_edges = face_connected_to_current_edge.union(
                     dict_edge.get(other_edge)[0]
                 )
@@ -800,8 +847,7 @@ def get_neighbors_uv_on_border(
                                     local_id = i
                                     break
                             if local_id != -1:
-                                uv_filtered_current_face.add(
-                                    uv_current_face[local_id])
+                                uv_filtered_current_face.add(uv_current_face[local_id])
 
                         vtx_other_face = dict_face.get(other_face)[0]
                         uv_other_face = dict_face.get(other_face)[1]
@@ -813,8 +859,7 @@ def get_neighbors_uv_on_border(
                                     local_id = i
                                     break
                             if local_id != -1:
-                                uv_filtered_other_face.add(
-                                    uv_other_face[local_id])
+                                uv_filtered_other_face.add(uv_other_face[local_id])
 
                         common_uv = uv_filtered_other_face & uv_filtered_current_face
                         if len(common_uv) == 1:
@@ -848,8 +893,7 @@ def get_neighbors_uv_on_border(
                                     }
                                 )
 
-                                neighbor_master_uv_point = common_uv - \
-                                    {master_uv_point}
+                                neighbor_master_uv_point = common_uv - {master_uv_point}
                                 dict_neighbor_uv[master_uv_point] = list(
                                     neighbor_master_uv_point
                                 )
@@ -901,6 +945,7 @@ def get_cord_uv_master_point_posed_mesh(
     dict_uv_vtx = {}
     for vtx, uv_indexes in dict_vtx_uv.items():
         for uv_index in uv_indexes:
+            # Pedantic, but you can do `if uv_index not in dict_uv_vtx:`
             if not uv_index in dict_uv_vtx:
                 dict_uv_vtx[uv_index] = len(uv_indexes), vtx
 
@@ -963,7 +1008,8 @@ def unwrap(mesh_to_unwrap: str, list_vertex_on_uv_border_index: Set[int]) -> str
     """
 
     unwrapped_geo = duplicate_mesh_without_set(
-        mesh_to_unwrap, name_duplicate=f"{mesh_to_unwrap.split('|')[-1] }_unwrapped")[0]
+        mesh_to_unwrap, name_duplicate=f"{mesh_to_unwrap.split('|')[-1] }_unwrapped"
+    )[0]
 
     vtx_to_detach = [
         f"{unwrapped_geo}.vtx[{str(vtx)}]" for vtx in list_vertex_on_uv_border_index
@@ -976,8 +1022,7 @@ def unwrap(mesh_to_unwrap: str, list_vertex_on_uv_border_index: Set[int]) -> str
     if cmds.polyEvaluate(unwrapped_geo, uv=True) != cmds.polyEvaluate(
         unwrapped_geo, vertex=True
     ):
-        raise RuntimeError(
-            f"the mesh: {unwrapped_geo} appears to not be flatten")
+        raise RuntimeError(f"the mesh: {unwrapped_geo} appears to not be flatten")
 
     selection_list = om2.MSelectionList()
     selection_list.add(unwrapped_geo)
@@ -1010,28 +1055,43 @@ def unwrap(mesh_to_unwrap: str, list_vertex_on_uv_border_index: Set[int]) -> str
     cmds.xform(unwrapped_geo, centerPivots=1)
 
     mesh_to_unwrap_bb = cmds.exactWorldBoundingBox(
-        mesh_to_unwrap, calculateExactly=True)
-    unwrapped_geo_bb = cmds.exactWorldBoundingBox(
-        unwrapped_geo, calculateExactly=True)
+        mesh_to_unwrap, calculateExactly=True
+    )
+    unwrapped_geo_bb = cmds.exactWorldBoundingBox(unwrapped_geo, calculateExactly=True)
 
-    mesh_to_unwrap_bb += [abs(mesh_to_unwrap_bb[0] - mesh_to_unwrap_bb[3]), abs(
-        mesh_to_unwrap_bb[1] - mesh_to_unwrap_bb[4]),
-        abs(mesh_to_unwrap_bb[2] - mesh_to_unwrap_bb[5])]
+    mesh_to_unwrap_bb += [
+        abs(mesh_to_unwrap_bb[0] - mesh_to_unwrap_bb[3]),
+        abs(mesh_to_unwrap_bb[1] - mesh_to_unwrap_bb[4]),
+        abs(mesh_to_unwrap_bb[2] - mesh_to_unwrap_bb[5]),
+    ]
     mesh_to_unwrap_bb.append(
-        max(mesh_to_unwrap_bb[6], mesh_to_unwrap_bb[7], mesh_to_unwrap_bb[8]))
-    unwrapped_geo_bb += [abs(unwrapped_geo_bb[0] - unwrapped_geo_bb[3]), abs(
-        unwrapped_geo_bb[1] - unwrapped_geo_bb[4]), abs(unwrapped_geo_bb[2] - unwrapped_geo_bb[5])]
+        max(mesh_to_unwrap_bb[6], mesh_to_unwrap_bb[7], mesh_to_unwrap_bb[8])
+    )
+    unwrapped_geo_bb += [
+        abs(unwrapped_geo_bb[0] - unwrapped_geo_bb[3]),
+        abs(unwrapped_geo_bb[1] - unwrapped_geo_bb[4]),
+        abs(unwrapped_geo_bb[2] - unwrapped_geo_bb[5]),
+    ]
     unwrapped_geo_bb.append(
-        max(unwrapped_geo_bb[6], unwrapped_geo_bb[7], unwrapped_geo_bb[8]))
+        max(unwrapped_geo_bb[6], unwrapped_geo_bb[7], unwrapped_geo_bb[8])
+    )
     ratio_scale = 1 * mesh_to_unwrap_bb[6] / unwrapped_geo_bb[6]
 
-    cmds.scale(ratio_scale, ratio_scale, ratio_scale,
-               unwrapped_geo, absolute=True)
-    cmds.move(0.5 * (mesh_to_unwrap_bb[0] + mesh_to_unwrap_bb[3]), 0.5 * (mesh_to_unwrap_bb[1] +
-              mesh_to_unwrap_bb[4]), 0.5 * (mesh_to_unwrap_bb[2] + mesh_to_unwrap_bb[5]),
-              unwrapped_geo, absolute=True)
+    cmds.scale(ratio_scale, ratio_scale, ratio_scale, unwrapped_geo, absolute=True)
+    cmds.move(
+        0.5 * (mesh_to_unwrap_bb[0] + mesh_to_unwrap_bb[3]),
+        0.5 * (mesh_to_unwrap_bb[1] + mesh_to_unwrap_bb[4]),
+        0.5 * (mesh_to_unwrap_bb[2] + mesh_to_unwrap_bb[5]),
+        unwrapped_geo,
+        absolute=True,
+    )
     cmds.makeIdentity(
-        unwrapped_geo, apply=True, translate=True, rotate=True, scale=True, preserveNormals=True
+        unwrapped_geo,
+        apply=True,
+        translate=True,
+        rotate=True,
+        scale=True,
+        preserveNormals=True,
     )  # if not inaccurate curve couple binding (mfn_curve.closestPoint()) not sure why.
 
     cmds.select(clear=True)
@@ -1095,7 +1155,7 @@ def dict_uv_cord_to_compare_to(
 def re_find_uv_master_point(
     dict_cord_master_uv_point: Dict[int, Tuple[float, float]],
     dict_uv_to_compare_to: Dict[int, Tuple[float, float]],
-    discard_threshold: float = 0.000000001
+    discard_threshold: float = 0.000000001,
 ) -> Set[int]:
     """Re-find the UV master point on the flatten or posed version of the same mesh.
 
@@ -1116,8 +1176,7 @@ def re_find_uv_master_point(
         for uv_index in dict_uv_to_compare_to.keys():
             u_cord, v_cord = dict_uv_to_compare_to.get(uv_index)
 
-            distance = (u_cord - target_u_cord) ** 2 + \
-                (v_cord - target_v_cord) ** 2
+            distance = (u_cord - target_u_cord) ** 2 + (v_cord - target_v_cord) ** 2
             if distance < closest_distance:
                 closest_distance = distance
                 closest_uv = uv_index
@@ -1170,8 +1229,7 @@ def calculate_path_between_two_uv_on_border(
     if shell_ids[start_index_uv] != shell_ids[end_index_uv]:
         return None  # The two UV points are not even on the same UV shell
 
-    list_every_input_point = list_stop_point.union(
-        {start_index_uv, end_index_uv})
+    list_every_input_point = list_stop_point.union({start_index_uv, end_index_uv})
 
     if start_index_uv != end_index_uv:
         stop_while_loop = False
@@ -1184,8 +1242,7 @@ def calculate_path_between_two_uv_on_border(
             0
         ]  # start with one direction
         if not key_uv_point in list_every_input_point:
-            list_current_neighbors = dict_neighbor_uv_on_border.get(
-                key_uv_point)
+            list_current_neighbors = dict_neighbor_uv_on_border.get(key_uv_point)
             old_uv_point = start_index_uv
             which_side_loop = 0
             uv_point_loop_00.add(key_uv_point)
@@ -1201,8 +1258,7 @@ def calculate_path_between_two_uv_on_border(
                 not key_uv_point in list_every_input_point
                 and start_index_uv != end_index_uv
             ):
-                list_current_neighbors = dict_neighbor_uv_on_border.get(
-                    key_uv_point)
+                list_current_neighbors = dict_neighbor_uv_on_border.get(key_uv_point)
                 old_uv_point = start_index_uv
                 which_side_loop = 1
                 uv_point_loop_01.add(key_uv_point)
@@ -1222,8 +1278,7 @@ def calculate_path_between_two_uv_on_border(
                     which_side_loop = 1
                     uv_point_loop_00.add(key_uv_point)
 
-                    key_uv_point = dict_neighbor_uv_on_border.get(start_index_uv)[
-                        1]
+                    key_uv_point = dict_neighbor_uv_on_border.get(start_index_uv)[1]
                     list_current_neighbors = dict_neighbor_uv_on_border.get(
                         key_uv_point
                     )
@@ -1247,8 +1302,7 @@ def calculate_path_between_two_uv_on_border(
             ):
                 if which_side_loop == 0:
                     which_side_loop = 1  # the first direction has failed
-                    key_uv_point = dict_neighbor_uv_on_border.get(start_index_uv)[
-                        1]
+                    key_uv_point = dict_neighbor_uv_on_border.get(start_index_uv)[1]
                     list_current_neighbors = dict_neighbor_uv_on_border.get(
                         key_uv_point
                     )
@@ -1270,10 +1324,8 @@ def calculate_path_between_two_uv_on_border(
             # if nothing can stop the loop then continue to walk the UV shell border
             if old_uv_point in list_current_neighbors:
                 dummy_var = key_uv_point
-                key_uv_point = (set(list_current_neighbors) -
-                                {old_uv_point}).pop()
-                list_current_neighbors = dict_neighbor_uv_on_border.get(
-                    key_uv_point)
+                key_uv_point = (set(list_current_neighbors) - {old_uv_point}).pop()
+                list_current_neighbors = dict_neighbor_uv_on_border.get(key_uv_point)
                 old_uv_point = dummy_var
 
                 if which_side_loop == 0:
@@ -1299,6 +1351,8 @@ def calculate_path_between_two_uv_on_border(
 
         stop_while_loop = False
         counter = 0
+        # It doesn't look like `stop_while_loop` gets set to `True`. Is this
+        # intentional?
         while stop_while_loop is False:
             if counter == 10000:
                 raise RuntimeError("Counter safe limit")
@@ -1319,10 +1373,8 @@ def calculate_path_between_two_uv_on_border(
             # if nothing can stop the loop then continue to walk the UV shell border
             if old_uv_point in list_current_neighbors:
                 dummy_var = key_uv_point
-                key_uv_point = (set(list_current_neighbors) -
-                                {old_uv_point}).pop()
-                list_current_neighbors = dict_neighbor_uv_on_border.get(
-                    key_uv_point)
+                key_uv_point = (set(list_current_neighbors) - {old_uv_point}).pop()
+                list_current_neighbors = dict_neighbor_uv_on_border.get(key_uv_point)
                 old_uv_point = dummy_var
                 uv_point_loop.add(old_uv_point)
 
@@ -1331,7 +1383,7 @@ def calculate_path_between_two_uv_on_border(
 def create_curve(
     geometry_name: str,
     list_input_master_uv_point: Set[int],
-    just_return_list_edge_loop_full_name: False
+    just_return_list_edge_loop_full_name: False,
 ) -> Set[str]:
     pass
 
@@ -1340,7 +1392,7 @@ def create_curve(
 def create_curve(
     geometry_name: str,
     list_input_master_uv_point: Set[int],
-    just_return_list_edge_loop_full_name: True
+    just_return_list_edge_loop_full_name: True,
 ) -> List[Set[int]]:
     pass
 
@@ -1348,7 +1400,7 @@ def create_curve(
 def create_curve(
     geometry_name: str,
     list_input_master_uv_point: Set[int],
-    just_return_list_edge_loop_full_name: bool
+    just_return_list_edge_loop_full_name: bool,
 ) -> Union[Set[str], List[Set[str]]]:
     """Creates curves along the perimeter of the flatten mesh.
 
@@ -1373,8 +1425,7 @@ def create_curve(
     # If walking on all the UV shell border the only UV master point found is the input one
     # then save the edge path an create a circular curve
 
-    list_component_on_uv_border = get_component_on_border(
-        geometry_name, mode="UV")
+    list_component_on_uv_border = get_component_on_border(geometry_name, mode="UV")
     (
         list_edge_on_uv_border_index,
         list_face_on_uv_border_index,
@@ -1406,33 +1457,29 @@ def create_curve(
             continue
         if isinstance(list_index_uv_path, tuple):
             path_00 = add_full_name_to_index_component(
-                list_index_uv_path[0], geometry_name, "map")
+                list_index_uv_path[0], geometry_name, "map"
+            )
             path_00 = cmds.polyListComponentConversion(
-                path_00,
-                fromUV=True,
-                toEdge=True,
-                internal=True)
+                path_00, fromUV=True, toEdge=True, internal=True
+            )
             path_00 = flatten_selection_list(path_00)
             dict_edge_loop_path[f"{uv_pair[0]} , {uv_pair[1]}"] = path_00
             path_01 = add_full_name_to_index_component(
-                list_index_uv_path[1], geometry_name, "map")
+                list_index_uv_path[1], geometry_name, "map"
+            )
             path_01 = cmds.polyListComponentConversion(
-                path_01,
-                fromUV=True,
-                toEdge=True,
-                internal=True)
+                path_01, fromUV=True, toEdge=True, internal=True
+            )
             path_01 = flatten_selection_list(path_01)
             dict_edge_loop_path[f"{uv_pair[0]} , {uv_pair[1]} , {2}"] = path_01
-            list_index_uv_found.update(
-                list_index_uv_path[0], list_index_uv_path[1])
+            list_index_uv_found.update(list_index_uv_path[0], list_index_uv_path[1])
         if isinstance(list_index_uv_path, set):
             path_00 = add_full_name_to_index_component(
-                list_index_uv_path, geometry_name, "map")
+                list_index_uv_path, geometry_name, "map"
+            )
             path_00 = cmds.polyListComponentConversion(
-                path_00,
-                fromUV=True,
-                toEdge=True,
-                internal=True)
+                path_00, fromUV=True, toEdge=True, internal=True
+            )
             path_00 = flatten_selection_list(path_00)
             dict_edge_loop_path[f"{uv_pair[0]} , {uv_pair[1]}"] = path_00
             list_index_uv_found.update(list_index_uv_path)
@@ -1447,7 +1494,8 @@ def create_curve(
                     uv_index, uv_index, dict_neighbor_uv_on_border, shell_ids
                 )
                 path_00 = add_full_name_to_index_component(
-                    list_index_uv_path, geometry_name, "map")
+                    list_index_uv_path, geometry_name, "map"
+                )
                 path_00 = cmds.polyListComponentConversion(
                     path_00,
                     fromUV=True,
@@ -1469,7 +1517,9 @@ def create_curve(
         edge_loop_path = dict_edge_loop_path.get(uv_point)
         list_edge_loop_path.append(edge_loop_path)
         if just_return_list_edge_loop_full_name is False:
-            cmds.select(edge_loop_path) # NOTE in maya 24 you need to select it before polyToCurve
+            cmds.select(
+                edge_loop_path
+            )  # NOTE in maya 24 you need to select it before polyToCurve
             output_curve = cmds.polyToCurve(
                 form=2,
                 degree=1,
@@ -1519,8 +1569,7 @@ def find_closest_cord_uv_point_on_mesh_based_on_curve(
         uv_01_on_unwrapped_geo = cmds.polyListComponentConversion(
             vtx_01_on_unwrapped_geo, fromVertex=True, toUV=True
         )[0]
-        index_uv_01_on_unwrapped_geo = get_index_component(
-            uv_01_on_unwrapped_geo)
+        index_uv_01_on_unwrapped_geo = get_index_component(uv_01_on_unwrapped_geo)
 
         dict_cord_uv_points_closest_to_curve = {
             index_uv_01_on_unwrapped_geo: mfn_mesh_unwrapped_geo.getUV(
@@ -1542,14 +1591,12 @@ def find_closest_cord_uv_point_on_mesh_based_on_curve(
         uv_01_on_unwrapped_geo = cmds.polyListComponentConversion(
             vtx_01_on_unwrapped_geo, fromVertex=True, toUV=True
         )[0]
-        index_uv_01_on_unwrapped_geo = get_index_component(
-            uv_01_on_unwrapped_geo)
+        index_uv_01_on_unwrapped_geo = get_index_component(uv_01_on_unwrapped_geo)
 
         pos_second_ep = cmds.pointPosition(f"{input_curve}.ep[1]", world=True)
         index_vtx_02_on_unwrapped_geo = get_closest_vertex(
             mfn_mesh_unwrapped_geo,
-            input_position=[pos_second_ep[0],
-                            pos_second_ep[1], pos_second_ep[2]],
+            input_position=[pos_second_ep[0], pos_second_ep[1], pos_second_ep[2]],
         )[0]
         vtx_02_on_unwrapped_geo = add_full_name_to_index_component(
             index_vtx_02_on_unwrapped_geo, geometry_name, "vtx"
@@ -1557,8 +1604,7 @@ def find_closest_cord_uv_point_on_mesh_based_on_curve(
         uv_02_on_unwrapped_geo = cmds.polyListComponentConversion(
             vtx_02_on_unwrapped_geo, fromVertex=True, toUV=True
         )[0]
-        index_uv_02_on_unwrapped_geo = get_index_component(
-            uv_02_on_unwrapped_geo)
+        index_uv_02_on_unwrapped_geo = get_index_component(uv_02_on_unwrapped_geo)
 
         dict_cord_uv_points_closest_to_curve = {
             index_uv_01_on_unwrapped_geo: mfn_mesh_unwrapped_geo.getUV(
@@ -1634,8 +1680,7 @@ def bind_curve(
         )
         list_uv_point_on_posed_mesh = re_find_uv_master_point(
             dict_cord_uv_points_closest_to_curve,
-            dict_uv_cord_to_compare_to(
-                posed_geometry, list_uv_on_border_index),
+            dict_uv_cord_to_compare_to(posed_geometry, list_uv_on_border_index),
         )
         list_all_uv_connection = set()
         for uv_index in list_uv_point_on_posed_mesh:
@@ -1727,8 +1772,7 @@ def bind_curve(
             if curve in pair or closest_curve in pair:
                 if pair != {curve, closest_curve}:
                     raise RuntimeError(
-                        "Pair already done with another", pair, {
-                            curve, closest_curve}
+                        "Pair already done with another", pair, {curve, closest_curve}
                     )
             if pair == {curve, closest_curve}:
                 pair_already_exist = True
@@ -1737,17 +1781,14 @@ def bind_curve(
 
     # now define the aesthetical attributes
     for curve in list_all_created_curve:
-        curve_shape_node = cmds.listRelatives(
-            curve, shapes=True, path=True)[0]
+        curve_shape_node = cmds.listRelatives(curve, shapes=True, path=True)[0]
         cmds.setAttr(curve_shape_node + ".overrideColor", 1)  # set black color
         cmds.setAttr(curve_shape_node + ".overrideEnabled", 1)
         cmds.setAttr(curve_shape_node + ".lineWidth", 5)
         cmds.setAttr(curve_shape_node + ".lineWidth", 5)
         # cmds.setAttr(curve_shape_node + ".overrideDisplayType", 1)
 
-        dummy_attr_perimeter_pointer_curve = (
-            "connection_between_perimeter_and_pointer_curve"
-        )  # use during the mouse evaluation
+        dummy_attr_perimeter_pointer_curve = "connection_between_perimeter_and_pointer_curve"  # use during the mouse evaluation
 
         cmds.addAttr(
             curve,
@@ -1798,16 +1839,19 @@ def bind_curve(
         )
         cmds.setAttr(f"{pointer_curve}.visibility", 0)
         new_curve_shape_node_name = cmds.listRelatives(
-            pointer_curve, shapes=True, path=True)[0]
+            pointer_curve, shapes=True, path=True
+        )[0]
         list_pointer_curve_created.add(pointer_curve)
         cmds.setAttr(new_curve_shape_node_name + ".overrideColor", 1)
         cmds.setAttr(new_curve_shape_node_name + ".overrideEnabled", 1)
         cmds.setAttr(new_curve_shape_node_name + ".lineWidth", 5)
 
         curve_shape_node = cmds.listRelatives(
-            couple_perimeter_curve[0], shapes=True, path=True)[0]
+            couple_perimeter_curve[0], shapes=True, path=True
+        )[0]
         twin_curve_shape_node = cmds.listRelatives(
-            couple_perimeter_curve[1], shapes=True, path=True)[0]
+            couple_perimeter_curve[1], shapes=True, path=True
+        )[0]
         cmds.setAttr(curve_shape_node + ".overrideColor", color_index)
         cmds.setAttr(twin_curve_shape_node + ".overrideColor", color_index)
         cmds.setAttr(new_curve_shape_node_name + ".overrideColor", color_index)
@@ -1865,19 +1909,18 @@ def bind_curve(
 
 
 def dict_cord_master_uv_points_from_posed_mesh(
-    posed_ref_geometry: str
+    posed_ref_geometry: str,
 ) -> Dict[int, Tuple[float, float]]:
     """From a posed geometry return a dictionary with all the coordinates of the master UV points.
 
     Args:
-        posed_ref_geometry (str): the posed ref version of the flatten geometry to bind.    
+        posed_ref_geometry (str): the posed ref version of the flatten geometry to bind.
 
     Returns:
         dict_cord_master_uv_point (Dict[int,Tuple[float,float]]): the key is the index of the uv
 
     """
-    list_component_on_uv_border = get_component_on_border(
-        posed_ref_geometry, mode="UV")
+    list_component_on_uv_border = get_component_on_border(posed_ref_geometry, mode="UV")
     (
         list_edge_on_uv_border_index,
         list_face_on_uv_border_index,
@@ -1888,7 +1931,8 @@ def dict_cord_master_uv_points_from_posed_mesh(
         list_component_on_uv_border[0],
     )
     list_vertex_index_on_border = get_component_on_border(
-        posed_ref_geometry, mode="vtx")
+        posed_ref_geometry, mode="vtx"
+    )
     dict_neighbor_uv_on_border = get_neighbors_uv_on_border(
         posed_ref_geometry,
         list_edge_on_uv_border_index,
@@ -1897,9 +1941,7 @@ def dict_cord_master_uv_points_from_posed_mesh(
     )
 
     dict_cord_master_uv_point = get_cord_uv_master_point_posed_mesh(
-        posed_ref_geometry,
-        dict_neighbor_uv_on_border,
-        list_vertex_index_on_border
+        posed_ref_geometry, dict_neighbor_uv_on_border, list_vertex_index_on_border
     )
     return dict_cord_master_uv_point
 
@@ -1924,26 +1966,34 @@ def update_label(list_perimeter_curve: Union[str, Set[str]]) -> None:
     # geometry inside the quick selection set. Just read the number the element that are in that set
     # an set that number to the appropriate indicator label. If the curve is binder change the color
     for perimeter_curve in list_perimeter_curve:
-        if cmds.attributeQuery("connection_between_perimeter_and_pointer_curve",
-                               node=perimeter_curve, exists=True):
+        if cmds.attributeQuery(
+            "connection_between_perimeter_and_pointer_curve",
+            node=perimeter_curve,
+            exists=True,
+        ):
             if not cmds.listConnections(
-                    f"{perimeter_curve}.connection_between_label_and_perimeter_curve"):
+                f"{perimeter_curve}.connection_between_label_and_perimeter_curve"
+            ):
                 continue
-            label_curve = (cmds.listConnections(
-                f"{perimeter_curve}.connection_between_label_and_perimeter_curve").pop())
+            label_curve = cmds.listConnections(
+                f"{perimeter_curve}.connection_between_label_and_perimeter_curve"
+            ).pop()
             if not cmds.listConnections(
-                    f"{label_curve}.connection_between_quick_set_and_label_curve"):
+                f"{label_curve}.connection_between_quick_set_and_label_curve"
+            ):
                 # if the set do not exist than skip
                 continue
-            edges_set = (cmds.listConnections(
-                f"{label_curve}.connection_between_quick_set_and_label_curve").pop())
-            element_in_set = flatten_selection_list(
-                cmds.sets(edges_set, query=True))
-            cmds.setAttr(label_curve +
-                         '.connection_between_float_indicator_and_label_curve',
-                         len(element_in_set))
+            edges_set = cmds.listConnections(
+                f"{label_curve}.connection_between_quick_set_and_label_curve"
+            ).pop()
+            element_in_set = flatten_selection_list(cmds.sets(edges_set, query=True))
+            cmds.setAttr(
+                label_curve + ".connection_between_float_indicator_and_label_curve",
+                len(element_in_set),
+            )
             shape_mesh = cmds.listRelatives(
-                cmds.ls(next(iter(element_in_set))), parent=True, type='mesh')[0]
+                cmds.ls(next(iter(element_in_set))), parent=True, type="mesh"
+            )[0]
             list_shape_mesh_binded_to_label.add(shape_mesh)
 
             if not shape_mesh in dict_shape_mesh_and_set:
@@ -1954,40 +2004,45 @@ def update_label(list_perimeter_curve: Union[str, Set[str]]) -> None:
             dict_shape_mesh_and_label[shape_mesh].append(label_curve)
             if not shape_mesh in dict_shape_mesh_and_perimeter_curve:
                 dict_shape_mesh_and_perimeter_curve[shape_mesh] = []
-            dict_shape_mesh_and_perimeter_curve[shape_mesh].append(
-                perimeter_curve)
+            dict_shape_mesh_and_perimeter_curve[shape_mesh].append(perimeter_curve)
         # if the curve is paired than update twin and set colors
-        if (cmds.listConnections(
-                f"{perimeter_curve}.connection_between_perimeter_and_pointer_curve")):
-
+        if cmds.listConnections(
+            f"{perimeter_curve}.connection_between_perimeter_and_pointer_curve"
+        ):
             pointer_curve = cmds.listConnections(
-                f"{perimeter_curve}.connection_between_perimeter_and_pointer_curve").pop()
+                f"{perimeter_curve}.connection_between_perimeter_and_pointer_curve"
+            ).pop()
             twin_closest_curve = cmds.listConnections(
-                f"{pointer_curve}.connection_between_perimeter_and_pointer_curve")
+                f"{pointer_curve}.connection_between_perimeter_and_pointer_curve"
+            )
             twin_closest_curve.remove(perimeter_curve)
             twin_closest_curve = twin_closest_curve.pop()
-            twin_label_curve = (cmds.listConnections(
-                f"{twin_closest_curve}.connection_between_label_and_perimeter_curve").pop())
+            twin_label_curve = cmds.listConnections(
+                f"{twin_closest_curve}.connection_between_label_and_perimeter_curve"
+            ).pop()
 
             if (label_curve, twin_label_curve) in dict_label_and_twin_label_curve:
                 continue
             if not cmds.listConnections(
-                    f"{twin_label_curve}.connection_between_quick_set_and_label_curve"):
+                f"{twin_label_curve}.connection_between_quick_set_and_label_curve"
+            ):
                 # if the user deletes a mesh that has been binded the set are deleted with the mesh.
                 # the labels are not connected to a set has expected to be.
                 continue
 
-            twin_edges_set = (cmds.listConnections(
-                f"{twin_label_curve}.connection_between_quick_set_and_label_curve").pop())
+            twin_edges_set = cmds.listConnections(
+                f"{twin_label_curve}.connection_between_quick_set_and_label_curve"
+            ).pop()
             element_in_twin_set = flatten_selection_list(
-                cmds.sets(twin_edges_set, query=True))
+                cmds.sets(twin_edges_set, query=True)
+            )
 
             if len(element_in_set) == len(element_in_twin_set):
-                cmds.setAttr(label_curve + '.overrideColor', 14)
-                cmds.setAttr(twin_label_curve + '.overrideColor', 14)
+                cmds.setAttr(label_curve + ".overrideColor", 14)
+                cmds.setAttr(twin_label_curve + ".overrideColor", 14)
             else:
-                cmds.setAttr(label_curve + '.overrideColor', 13)
-                cmds.setAttr(twin_label_curve + '.overrideColor', 13)
+                cmds.setAttr(label_curve + ".overrideColor", 13)
+                cmds.setAttr(twin_label_curve + ".overrideColor", 13)
             dict_label_and_twin_label_curve[label_curve] = twin_label_curve
             dict_label_and_twin_label_curve[twin_label_curve] = label_curve
 
@@ -2011,31 +2066,41 @@ def update_label(list_perimeter_curve: Union[str, Set[str]]) -> None:
             # - Doing so you know the pair of perimeter curves. The master
             # should give the label indicator its value to the slave one.
 
-            set_connected_to_master_mesh = dict_shape_mesh_and_set.get(
-                master_node)
+            set_connected_to_master_mesh = dict_shape_mesh_and_set.get(master_node)
             # print("master",master_node, "slave" ,shape_mesh,"set connected a slave")
             # print(dict_shape_mesh_and_set.get(shape_mesh), "master", set_connected_to_master_mesh)
             for set_master_mesh in set_connected_to_master_mesh:
                 element_in_set = flatten_selection_list(
-                    cmds.sets(set_master_mesh, query=True))
+                    cmds.sets(set_master_mesh, query=True)
+                )
                 random_edge_in_set = next(iter(element_in_set))
-                list_two_vtx = flatten_selection_list(cmds.polyListComponentConversion(
-                    random_edge_in_set, fromEdge=True, toVertex=True))
+                list_two_vtx = flatten_selection_list(
+                    cmds.polyListComponentConversion(
+                        random_edge_in_set, fromEdge=True, toVertex=True
+                    )
+                )
                 list_two_vtx_pos = []
                 for vertex in list_two_vtx:
-                    list_two_vtx_pos.append(cmds.xform(
-                        vertex, worldSpace=1, translation=1, query=1))
-                id_random_edge_in_set_slave = get_index_component(
-                    random_edge_in_set)
-                random_edge_in_set_slave = f"{shape_mesh}.e[{str(id_random_edge_in_set_slave)}]"
-                list_two_vtx_slave = flatten_selection_list(cmds.polyListComponentConversion(
-                    random_edge_in_set_slave, fromEdge=True, toVertex=True))
+                    list_two_vtx_pos.append(
+                        cmds.xform(vertex, worldSpace=1, translation=1, query=1)
+                    )
+                id_random_edge_in_set_slave = get_index_component(random_edge_in_set)
+                random_edge_in_set_slave = (
+                    f"{shape_mesh}.e[{str(id_random_edge_in_set_slave)}]"
+                )
+                list_two_vtx_slave = flatten_selection_list(
+                    cmds.polyListComponentConversion(
+                        random_edge_in_set_slave, fromEdge=True, toVertex=True
+                    )
+                )
                 list_two_vtx_pos_slave = []
                 for vertex in list_two_vtx_slave:
-                    list_two_vtx_pos_slave.append(cmds.xform(
-                        vertex, worldSpace=1, translation=1, query=1))
-                perimeter_curve_binded_to_slave_mesh = dict_shape_mesh_and_perimeter_curve.get(
-                    shape_mesh)
+                    list_two_vtx_pos_slave.append(
+                        cmds.xform(vertex, worldSpace=1, translation=1, query=1)
+                    )
+                perimeter_curve_binded_to_slave_mesh = (
+                    dict_shape_mesh_and_perimeter_curve.get(shape_mesh)
+                )
 
                 dict_vertex_distance = {}
                 for perimeter_curve in perimeter_curve_binded_to_slave_mesh:
@@ -2057,22 +2122,28 @@ def update_label(list_perimeter_curve: Union[str, Set[str]]) -> None:
                         closest_curve_slave = perimeter_curve
                         closest_distance = average_distance
 
-                label_curve_slave = (cmds.listConnections(
-                    f"{closest_curve_slave}.connection_between_label_and_perimeter_curve").pop())
-                cmds.setAttr(label_curve_slave +
-                             '.connection_between_float_indicator_and_label_curve',
-                             len(element_in_set))
+                label_curve_slave = cmds.listConnections(
+                    f"{closest_curve_slave}.connection_between_label_and_perimeter_curve"
+                ).pop()
+                cmds.setAttr(
+                    label_curve_slave
+                    + ".connection_between_float_indicator_and_label_curve",
+                    len(element_in_set),
+                )
                 label_curve_twin = dict_label_and_twin_label_curve.get(
-                    label_curve_slave)
+                    label_curve_slave
+                )
                 if label_curve_twin is not None:
-                    var_twin = cmds.getAttr(label_curve_twin +
-                                            '.connection_between_float_indicator_and_label_curve')
+                    var_twin = cmds.getAttr(
+                        label_curve_twin
+                        + ".connection_between_float_indicator_and_label_curve"
+                    )
                     if len(element_in_set) == var_twin:
-                        cmds.setAttr(label_curve_slave + '.overrideColor', 14)
-                        cmds.setAttr(label_curve_twin + '.overrideColor', 14)
+                        cmds.setAttr(label_curve_slave + ".overrideColor", 14)
+                        cmds.setAttr(label_curve_twin + ".overrideColor", 14)
                     else:
-                        cmds.setAttr(label_curve_slave + '.overrideColor', 13)
-                        cmds.setAttr(label_curve_twin + '.overrideColor', 13)
+                        cmds.setAttr(label_curve_slave + ".overrideColor", 13)
+                        cmds.setAttr(label_curve_twin + ".overrideColor", 13)
 
 
 def bind_label_indicator(
@@ -2093,7 +2164,7 @@ def bind_label_indicator(
         bool_unhide_updated_label (bool): unhide the just binded label curve.
         bool_just_return_found_label_curve (bool): just return the label curve to bind.
         bool_check_if_proper_input (bool): check if the input meshes are ok or not.
-        posed_ref_geometry (str): the posed ref version of the flatten geometry to bind.    
+        posed_ref_geometry (str): the posed ref version of the flatten geometry to bind.
         dict_cord_master_uv_point (Dict[int, Tuple[float, float]]): the key is the index of the uv
         master point found. The value is the corresponding coordinate of that point.
         list_perimeter_curve (Set[str]): the curve that live on the perimeter of the unwrapped
@@ -2105,7 +2176,8 @@ def bind_label_indicator(
     # the uv master point are mandatory
     if dict_cord_master_uv_point is None and posed_ref_geometry is None:
         raise TypeError(
-            "Input a dictionary with the master uv points or the posed ref geometry")
+            "Input a dictionary with the master uv points or the posed ref geometry"
+        )
 
     # if you are dealing with a user type of input it is better to have it on
     if bool_check_if_proper_input:
@@ -2118,8 +2190,14 @@ def bind_label_indicator(
             raise_error_if_mesh_is_unflat(mesh)
         if posed_ref_geometry:
             cmds.delete(posed_ref_geometry, constructionHistory=True)
-            cmds.makeIdentity(posed_ref_geometry, apply=True,
-                              translate=True, rotate=True, scale=True, preserveNormals=True)
+            cmds.makeIdentity(
+                posed_ref_geometry,
+                apply=True,
+                translate=True,
+                rotate=True,
+                scale=True,
+                preserveNormals=True,
+            )
             raise_error_if_mesh_has_missing_uvs(posed_ref_geometry)
             raise_error_if_mesh_has_one_uv_shell(posed_ref_geometry)
             raise_error_if_mesh_has_overlapping_uvs(posed_ref_geometry)
@@ -2127,15 +2205,22 @@ def bind_label_indicator(
     # if both are input choose the already done dict_cord_master_uv_point
     if posed_ref_geometry is not None and dict_cord_master_uv_point is None:
         dict_cord_master_uv_point = dict_cord_master_uv_points_from_posed_mesh(
-            posed_ref_geometry)
+            posed_ref_geometry
+        )
 
     if list_perimeter_curve is None:
         list_perimeter_curve = set()
         for curve in return_curve_in_scene()[0]:
-            if cmds.attributeQuery("connection_between_perimeter_and_pointer_curve",
-                                   node=curve, exists=True):
-                if cmds.attributeQuery("connection_between_label_and_perimeter_curve",
-                                       node=curve, exists=True):
+            if cmds.attributeQuery(
+                "connection_between_perimeter_and_pointer_curve",
+                node=curve,
+                exists=True,
+            ):
+                if cmds.attributeQuery(
+                    "connection_between_label_and_perimeter_curve",
+                    node=curve,
+                    exists=True,
+                ):
                     list_perimeter_curve.add(curve)
 
     list_closest_curve = set()
@@ -2143,26 +2228,29 @@ def bind_label_indicator(
     for shell in list_input_geometry:
         if bool_create_label:
             list_input_index_master_uv_point = re_find_uv_master_point(
-                dict_cord_master_uv_point, dict_uv_cord_to_compare_to(shell))
+                dict_cord_master_uv_point, dict_uv_cord_to_compare_to(shell)
+            )
         else:
             list_input_index_master_uv_point = re_find_uv_master_point(
-                dict_cord_master_uv_point, dict_uv_cord_to_compare_to(shell), 0.0001)
+                dict_cord_master_uv_point, dict_uv_cord_to_compare_to(shell), 0.0001
+            )
 
         list_edge_loop_path = create_curve(
             shell,
             list_input_index_master_uv_point,
-            just_return_list_edge_loop_full_name=True
+            just_return_list_edge_loop_full_name=True,
         )
 
         for edge_loop_path in list_edge_loop_path:
             list_vertex_loop_path = cmds.polyListComponentConversion(
-                edge_loop_path, fromEdge=True, toVertex=True)
-            list_vertex_loop_path = flatten_selection_list(
-                list_vertex_loop_path)
+                edge_loop_path, fromEdge=True, toVertex=True
+            )
+            list_vertex_loop_path = flatten_selection_list(list_vertex_loop_path)
             list_curve_pos = []
             for vertex in list_vertex_loop_path:
-                list_curve_pos.append(cmds.xform(
-                    vertex, worldSpace=1, translation=1, query=1))
+                list_curve_pos.append(
+                    cmds.xform(vertex, worldSpace=1, translation=1, query=1)
+                )
 
             closest_curve = None
             closest_distance = float("inf")
@@ -2179,8 +2267,7 @@ def bind_label_indicator(
                     )
                     dict_vertex_distance[perimeter_curve] += distance_from_vertex
 
-                dict_vertex_distance[perimeter_curve] /= len(
-                    list_vertex_loop_path)
+                dict_vertex_distance[perimeter_curve] /= len(list_vertex_loop_path)
 
             closest_curve = None
             closest_distance = float("inf")
@@ -2192,33 +2279,58 @@ def bind_label_indicator(
 
             if bool_just_return_found_label_curve:
                 label_curve = cmds.listConnections(
-                    f"{closest_curve}.connection_between_label_and_perimeter_curve").pop()
+                    f"{closest_curve}.connection_between_label_and_perimeter_curve"
+                ).pop()
                 list_label_curve.add(label_curve)
                 continue
 
             if bool_create_label:
                 if cmds.getAttr(f"{closest_curve}.form") == 0:  # open curve
                     name_dummy_curve = cmds.duplicate(
-                        closest_curve, name="dummy_closest_curve")[0]
-                    cmds.rebuildCurve(name_dummy_curve, ch=0, rpo=1, rt=0, end=1, kr=0, kcp=0,
-                                      kep=0, kt=0, s=2, d=1, fr=0, tol=0)
-                    pos_center_curve = cmds.xform(f"{name_dummy_curve}.ep[1]",
-                                                  worldSpace=True, translation=True, q=True)
+                        closest_curve, name="dummy_closest_curve"
+                    )[0]
+                    cmds.rebuildCurve(
+                        name_dummy_curve,
+                        ch=0,
+                        rpo=1,
+                        rt=0,
+                        end=1,
+                        kr=0,
+                        kcp=0,
+                        kep=0,
+                        kt=0,
+                        s=2,
+                        d=1,
+                        fr=0,
+                        tol=0,
+                    )
+                    pos_center_curve = cmds.xform(
+                        f"{name_dummy_curve}.ep[1]",
+                        worldSpace=True,
+                        translation=True,
+                        q=True,
+                    )
                     cmds.delete(name_dummy_curve)
                 else:
-                    pos_center_curve = cmds.xform(f"{closest_curve}.ep[0]",
-                                                  worldSpace=True, translation=True, q=True)
-                label_curve = cmds.circle(center=pos_center_curve,
-                                          radius=0.0000001,
-                                          sections=2,
-                                          constructionHistory=False,
-                                          name="label_00")[0]
-                label_indicator = cmds.paramDimension(label_curve + '.u[0.5]')
-                edges_set = cmds.sets(
-                    name="set_label_0001", empty=True, edges=True)
+                    pos_center_curve = cmds.xform(
+                        f"{closest_curve}.ep[0]",
+                        worldSpace=True,
+                        translation=True,
+                        q=True,
+                    )
+                label_curve = cmds.circle(
+                    center=pos_center_curve,
+                    radius=0.0000001,
+                    sections=2,
+                    constructionHistory=False,
+                    name="label_00",
+                )[0]
+                label_indicator = cmds.paramDimension(label_curve + ".u[0.5]")
+                edges_set = cmds.sets(name="set_label_0001", empty=True, edges=True)
                 cmds.sets(edge_loop_path, add=edges_set)
                 element_in_set = flatten_selection_list(
-                    cmds.sets(edges_set, query=True))
+                    cmds.sets(edges_set, query=True)
+                )
                 cmds.addAttr(
                     [label_indicator, label_curve],
                     longName="connection_between_indicator_and_label_curve",
@@ -2264,31 +2376,39 @@ def bind_label_indicator(
                     f"{label_curve}.connection_between_quick_set_and_label_curve",
                     f"{edges_set}.connection_between_quick_set_and_label_curve",
                 )
-                cmds.connectAttr(label_curve +
-                                 '.connection_between_float_indicator_and_label_curve',
-                                 label_indicator + '.uParamValue')
-                cmds.setAttr(label_curve +
-                             '.connection_between_float_indicator_and_label_curve',
-                             len(element_in_set))
-                cmds.setAttr(label_curve + '.overrideEnabled', 1)
-                cmds.setAttr(label_curve + '.overrideColor', 1)
+                cmds.connectAttr(
+                    label_curve + ".connection_between_float_indicator_and_label_curve",
+                    label_indicator + ".uParamValue",
+                )
+                cmds.setAttr(
+                    label_curve + ".connection_between_float_indicator_and_label_curve",
+                    len(element_in_set),
+                )
+                cmds.setAttr(label_curve + ".overrideEnabled", 1)
+                cmds.setAttr(label_curve + ".overrideColor", 1)
                 cmds.setAttr(f"{label_curve}.visibility", 0)
                 list_label_curve.add(label_curve)
 
             else:
-
-                label_curve = (cmds.listConnections(
-                    f"{closest_curve}.connection_between_label_and_perimeter_curve").pop())
+                label_curve = cmds.listConnections(
+                    f"{closest_curve}.connection_between_label_and_perimeter_curve"
+                ).pop()
                 previous_quick_set = cmds.listConnections(
-                    f"{label_curve}.connection_between_quick_set_and_label_curve")
+                    f"{label_curve}.connection_between_quick_set_and_label_curve"
+                )
                 if previous_quick_set:
-                    deleted_nodes = [node for node in  # pylint: disable=unused-variable
-                                     previous_quick_set if cmds.delete(node)]
+                    deleted_nodes = [
+                        node
+                        for node in previous_quick_set  # pylint: disable=unused-variable
+                        if cmds.delete(node)
+                    ]
                 edges_set = cmds.sets(
-                    name="set_label_0001", empty=True, edges=True)  # edges=1 make them invisible
+                    name="set_label_0001", empty=True, edges=True
+                )  # edges=1 make them invisible
                 cmds.sets(edge_loop_path, add=edges_set)
                 element_in_set = flatten_selection_list(
-                    cmds.sets(edges_set, query=True))
+                    cmds.sets(edges_set, query=True)
+                )
 
                 cmds.addAttr(
                     edges_set,
@@ -2303,9 +2423,10 @@ def bind_label_indicator(
                     f"{label_curve}.connection_between_quick_set_and_label_curve",
                     f"{edges_set}.connection_between_quick_set_and_label_curve",
                 )
-                cmds.setAttr(label_curve +
-                             '.connection_between_float_indicator_and_label_curve',
-                             len(element_in_set))
+                cmds.setAttr(
+                    label_curve + ".connection_between_float_indicator_and_label_curve",
+                    len(element_in_set),
+                )
                 list_label_curve.add(label_curve)
 
     if not bool_just_return_found_label_curve:
@@ -2313,13 +2434,13 @@ def bind_label_indicator(
 
         if bool_unhide_updated_label:
             for label in list_label_curve:
-                cmds.setAttr(label + '.visibility', 1)
+                cmds.setAttr(label + ".visibility", 1)
 
     return list_label_curve
 
 
 def analyze_and_unwrap(
-    geometry_name: str
+    geometry_name: str,
 ) -> Tuple[str, List[str], List[str], List[str], List[str], List[str], List[str]]:
     """Given a geometry name, flatten the geometry and create the curve pairings.
 
@@ -2335,16 +2456,21 @@ def analyze_and_unwrap(
 
     # Construction history optional to delete but it may slow down calculation.
     cmds.delete(geometry_name, constructionHistory=True)
-    cmds.makeIdentity(geometry_name, apply=True,
-                      translate=True, rotate=True, scale=True, preserveNormals=True)
+    cmds.makeIdentity(
+        geometry_name,
+        apply=True,
+        translate=True,
+        rotate=True,
+        scale=True,
+        preserveNormals=True,
+    )
     raise_error_if_mesh_has_missing_uvs(geometry_name)
     raise_error_if_mesh_has_one_uv_shell(geometry_name)
     raise_error_if_mesh_has_overlapping_uvs(geometry_name)
     raise_error_if_mesh_has_unpairable_uv_border(geometry_name)
 
     # get all the require information about the components of the mesh
-    list_component_on_uv_border = get_component_on_border(
-        geometry_name, mode="UV")
+    list_component_on_uv_border = get_component_on_border(geometry_name, mode="UV")
     (
         list_vertex_on_uv_border_index,
         list_edge_on_uv_border_index,
@@ -2356,8 +2482,7 @@ def analyze_and_unwrap(
         list_component_on_uv_border[3],
         list_component_on_uv_border[0],
     )
-    list_vertex_index_on_border = get_component_on_border(
-        geometry_name, mode="vtx")
+    list_vertex_index_on_border = get_component_on_border(geometry_name, mode="vtx")
     dict_neighbor_uv_on_border = get_neighbors_uv_on_border(
         geometry_name,
         list_edge_on_uv_border_index,
@@ -2386,8 +2511,10 @@ def analyze_and_unwrap(
         unwrapped_geo, name=f"{geometry_name.split('|')[-1]}_separated_shells"
     )[0]
     list_input_geometry = cmds.polySeparate(
-        shell_group_folder, name=f"{geometry_name.split('|')[-1]}_shell_01",
-        constructionHistory=False)  # polySeparate create a folder
+        shell_group_folder,
+        name=f"{geometry_name.split('|')[-1]}_shell_01",
+        constructionHistory=False,
+    )  # polySeparate create a folder
 
     #
     list_input_index_master_uv_point = re_find_uv_master_point(
@@ -2417,10 +2544,9 @@ def analyze_and_unwrap(
         list_created_curve = create_curve(
             shell,
             list_input_index_master_uv_point,
-            just_return_list_edge_loop_full_name=False
+            just_return_list_edge_loop_full_name=False,
         )
-        list_all_created_curve = list_all_created_curve.union(
-            list_created_curve)
+        list_all_created_curve = list_all_created_curve.union(list_created_curve)
         cmds.connectAttr(
             f"{unwrapped_geo}.{dummy_attr_perimeter_pointer_curve}",
             f"{shell}.{dummy_attr_perimeter_pointer_curve}",
@@ -2441,22 +2567,25 @@ def analyze_and_unwrap(
         bool_check_if_proper_input=False,
         posed_ref_geometry=None,
         dict_cord_master_uv_point=dict_cord_master_uv_point,
-        list_perimeter_curve=list_all_perimeter_curve
+        list_perimeter_curve=list_all_perimeter_curve,
     )
     # do some organization
     cmds.hide([geometry_name, unwrapped_geo])
     cmds.setAttr(shell_group_folder + ".visibility", 1)
 
     perimeter_curve_folder = cmds.group(
-        empty=True, name=f"{geometry_name.split('|')[-1]}_perimeter")
+        empty=True, name=f"{geometry_name.split('|')[-1]}_perimeter"
+    )
     pointer_curve_folder = cmds.group(
-        empty=True, name=f"{geometry_name.split('|')[-1]}_pointer")
+        empty=True, name=f"{geometry_name.split('|')[-1]}_pointer"
+    )
     label_curve_folder = cmds.group(
-        empty=True, name=f"{geometry_name.split('|')[-1]}_label")
-    curve_folder = cmds.group(
-        empty=True, name=f"{geometry_name.split('|')[-1]}_curve")
+        empty=True, name=f"{geometry_name.split('|')[-1]}_label"
+    )
+    curve_folder = cmds.group(empty=True, name=f"{geometry_name.split('|')[-1]}_curve")
     master_folder = cmds.group(
-        empty=True, name=f"{geometry_name.split('|')[-1]}_unwrap_analyze_output")
+        empty=True, name=f"{geometry_name.split('|')[-1]}_unwrap_analyze_output"
+    )
 
     unwrapped_geo = cmds.parent(unwrapped_geo, master_folder)[0]
     shell_group_folder = cmds.parent(shell_group_folder, master_folder)
@@ -2465,16 +2594,22 @@ def analyze_and_unwrap(
     pointer_curve_folder = cmds.parent(pointer_curve_folder, curve_folder)
     label_curve_folder = cmds.parent(label_curve_folder, curve_folder)
     list_all_perimeter_curve = cmds.parent(
-        list_all_perimeter_curve, perimeter_curve_folder)
-    list_all_pointer_curve = cmds.parent(
-        list_all_pointer_curve, pointer_curve_folder)
-    list_label_curve = cmds.parent(
-        list_label_curve, label_curve_folder)
+        list_all_perimeter_curve, perimeter_curve_folder
+    )
+    list_all_pointer_curve = cmds.parent(list_all_pointer_curve, pointer_curve_folder)
+    list_label_curve = cmds.parent(list_label_curve, label_curve_folder)
     list_all_created_curve = (
-        list_all_perimeter_curve + list_all_pointer_curve + list_label_curve)
+        list_all_perimeter_curve + list_all_pointer_curve + list_label_curve
+    )
     cmds.move(0, 0, 0.001, curve_folder, absolute=True)  # better for hitest()
-    list_folders = [master_folder, shell_group_folder,
-                    curve_folder, perimeter_curve_folder, pointer_curve_folder, label_curve_folder]
+    list_folders = [
+        master_folder,
+        shell_group_folder,
+        curve_folder,
+        perimeter_curve_folder,
+        pointer_curve_folder,
+        label_curve_folder,
+    ]
     cmds.select(clear=True)
 
     global last_unwrapped_ref_geo_created  # pylint: disable=global-variable-undefined
@@ -2482,8 +2617,15 @@ def analyze_and_unwrap(
     global last_posed_ref_geo_created  # pylint: disable=global-variable-undefined
     last_posed_ref_geo_created = geometry_name
 
-    return (unwrapped_geo, list_input_geometry, list_all_perimeter_curve,
-            list_all_pointer_curve, list_label_curve, list_all_created_curve, list_folders)
+    return (
+        unwrapped_geo,
+        list_input_geometry,
+        list_all_perimeter_curve,
+        list_all_pointer_curve,
+        list_label_curve,
+        list_all_created_curve,
+        list_folders,
+    )
 
 
 def calculate_faces_per_material(geometry_name: str) -> Dict[str, Set[str]]:
@@ -2500,10 +2642,8 @@ def calculate_faces_per_material(geometry_name: str) -> Dict[str, Set[str]]:
     if cmds.polyEvaluate(geometry_name, uv=True) != 0:
         cmds.polyMapDel(geometry_name + ".map[*]", constructionHistory=False)
 
-    shape_node = cmds.listRelatives(
-        geometry_name, shapes=True, path=True)[0]
-    list_shading_engines = cmds.listConnections(
-        shape_node, type="shadingEngine")
+    shape_node = cmds.listRelatives(geometry_name, shapes=True, path=True)[0]
+    list_shading_engines = cmds.listConnections(shape_node, type="shadingEngine")
     if list_shading_engines is None:
         return None
 
@@ -2516,12 +2656,10 @@ def calculate_faces_per_material(geometry_name: str) -> Dict[str, Set[str]]:
         for component in every_surface_where_assigned:
             split_component_part = component.split(".")
             if len(split_component_part) == 1:
-                list_face_filtered.update(
-                    cmds.ls(f"{component}.f[*]", flatten=True))
+                list_face_filtered.update(cmds.ls(f"{component}.f[*]", flatten=True))
             else:
                 if split_component_part[0] == geometry_name:
-                    list_face_filtered.update(
-                        flatten_selection_list(component))
+                    list_face_filtered.update(flatten_selection_list(component))
 
         dict_faces_per_material[shading_engine] = list_face_filtered
 
@@ -2563,15 +2701,16 @@ def are_two_meshes_identical(
     if len(list_cord_vtx_mesh_00) != len(list_cord_vtx_mesh_01):
         return False
 
-    for (cord_point_00, cord_point_01) in zip(list_cord_vtx_mesh_00, list_cord_vtx_mesh_01):
+    for cord_point_00, cord_point_01 in zip(
+        list_cord_vtx_mesh_00, list_cord_vtx_mesh_01
+    ):
         if not cord_point_00.isEquivalent(cord_point_01, threshold):
             return False
     return True
 
 
 def create_material(
-    material_name: str,
-    type_material: str = "lambert"
+    material_name: str, type_material: str = "lambert"
 ) -> Tuple[str, str]:
     """Create a material with a shading group attached.
 
@@ -2581,48 +2720,44 @@ def create_material(
 
     Returns:
         Tuple[str,str]: the first str is the name of the material created and the second one
-        is the name of the shading group that is linked to the material. 
+        is the name of the shading group that is linked to the material.
     """
-    material_name = cmds.shadingNode(
-        type_material, name=material_name, asShader=True)
-    shader_name = cmds.sets(name=f"{material_name.split('|')[-1]}_SHA", empty=True,
-                            renderable=True, noSurfaceShader=True)
-    cmds.connectAttr(f"{material_name}.outColor",
-                     f"{shader_name}.surfaceShader")
+    material_name = cmds.shadingNode(type_material, name=material_name, asShader=True)
+    shader_name = cmds.sets(
+        name=f"{material_name.split('|')[-1]}_SHA",
+        empty=True,
+        renderable=True,
+        noSurfaceShader=True,
+    )
+    cmds.connectAttr(f"{material_name}.outColor", f"{shader_name}.surfaceShader")
     return material_name, shader_name
 
 
-def ordered_vertex_loop_from_edge_loop(
-    edge_loop_path: List[str]
-) -> List[str]:
+def ordered_vertex_loop_from_edge_loop(edge_loop_path: List[str]) -> List[str]:
     """Get the vertex in topological order from a given edge loop selection.
 
     Args:
         edge_loop_path (List[str]): the full name of the edges to order.
 
     Returns:
-        List[str]: all the vertexes that make the input edge loop path listed in topological order. 
+        List[str]: all the vertexes that make the input edge loop path listed in topological order.
     """
     # TODO: rewrite this
-    shape_node = cmds.listRelatives(
-        edge_loop_path[0], path=True, parent=True)
-    transform_node = cmds.listRelatives(
-        shape_node[0], path=True, parent=True)
+    shape_node = cmds.listRelatives(edge_loop_path[0], path=True, parent=True)
+    transform_node = cmds.listRelatives(shape_node[0], path=True, parent=True)
     edge_number_list = []
     for edge in edge_loop_path:
-        check_number = ((edge.split('.')[1]).split('\n')[0]).split(' ')
+        check_number = ((edge.split(".")[1]).split("\n")[0]).split(" ")
         for check in check_number:
-            find_number = ''.join(
-                [n for n in check.split('|')[-1] if n.isdigit()])
+            find_number = "".join([n for n in check.split("|")[-1] if n.isdigit()])
             if find_number:
                 edge_number_list.append(find_number)
     get_number = []
     for edge in edge_loop_path:
         vtx_list = cmds.polyInfo(edge, edgeToVertex=True)
-        check_number = ((vtx_list[0].split(':')[1]).split('\n')[0]).split(' ')
+        check_number = ((vtx_list[0].split(":")[1]).split("\n")[0]).split(" ")
         for check in check_number:
-            find_number = ''.join(
-                [n for n in check.split('|')[-1] if n.isdigit()])
+            find_number = "".join([n for n in check.split("|")[-1] if n.isdigit()])
             if find_number:
                 get_number.append(find_number)
     dup = set([x for x in get_number if get_number.count(x) > 1])
@@ -2635,13 +2770,12 @@ def ordered_vertex_loop_from_edge_loop(
     vft_order.append(get_head_tail[0])
     count = 0
     while len(dup) > 0 and count < 1000:
-        check_vtx = transform_node[0]+'.vtx[' + vft_order[-1] + ']'
+        check_vtx = transform_node[0] + ".vtx[" + vft_order[-1] + "]"
         vtx_list = cmds.polyInfo(check_vtx, ve=True)
         get_number = []
-        check_number = ((vtx_list[0].split(':')[1]).split('\n')[0]).split(' ')
+        check_number = ((vtx_list[0].split(":")[1]).split("\n")[0]).split(" ")
         for check in check_number:
-            find_number = ''.join(
-                [n for n in check.split('|')[-1] if n.isdigit()])
+            find_number = "".join([n for n in check.split("|")[-1] if n.isdigit()])
             if find_number:
                 get_number.append(find_number)
         find_next_edge = []
@@ -2649,13 +2783,12 @@ def ordered_vertex_loop_from_edge_loop(
             if get in edge_number_list:
                 find_next_edge = get
         edge_number_list.remove(find_next_edge)
-        check_vtx = transform_node[0]+'.e[' + find_next_edge + ']'
+        check_vtx = transform_node[0] + ".e[" + find_next_edge + "]"
         find_vtx = cmds.polyInfo(check_vtx, ev=True)
         get_number = []
-        check_number = ((find_vtx[0].split(':')[1]).split('\n')[0]).split(' ')
+        check_number = ((find_vtx[0].split(":")[1]).split("\n")[0]).split(" ")
         for check in check_number:
-            find_number = ''.join(
-                [n for n in check.split('|')[-1] if n.isdigit()])
+            find_number = "".join([n for n in check.split("|")[-1] if n.isdigit()])
             if find_number:
                 get_number.append(find_number)
         got_next_vtx = []
@@ -2674,7 +2807,7 @@ def ordered_vertex_loop_from_edge_loop(
             vft_order = vft_order[0:-1]
     final_list = []
     for vertex in vft_order:
-        final_list.append(transform_node[0]+'.vtx[' + vertex + ']')
+        final_list.append(transform_node[0] + ".vtx[" + vertex + "]")
     return final_list
 
 
@@ -2694,38 +2827,38 @@ def get_smart_mirror_twin(geometry_name: str) -> Optional[Union[str, Set[str]]]:
     # All the edit done to the "slave" do not propagate to the "master".
     # If you delete the history of the slave the connection is lost.
 
-    if cmds.listConnections(f'{geometry_name}.outMesh'):
-        if cmds.listConnections(f'{geometry_name}.inMesh'):
+    if cmds.listConnections(f"{geometry_name}.outMesh"):
+        if cmds.listConnections(f"{geometry_name}.inMesh"):
             # if the mesh has history it can happen to have both connected outMesh and inMesh
             cmds.delete(geometry_name, constructionHistory=True)
 
-    if cmds.listConnections(f'{geometry_name}.outMesh'):
-        if cmds.listConnections(f'{geometry_name}.inMesh'):
+    if cmds.listConnections(f"{geometry_name}.outMesh"):
+        if cmds.listConnections(f"{geometry_name}.inMesh"):
             raise RuntimeError("Both 'outMesh' and 'inMesh'")
 
-    if cmds.listConnections(f'{geometry_name}.outMesh'):
+    if cmds.listConnections(f"{geometry_name}.outMesh"):
         list_nodes_forewords = cmds.listHistory(geometry_name, future=True)
         list_shape_nodes_connected = set()
         for node in list_nodes_forewords:
             if cmds.objectType(node, isType="mesh"):
-                if cmds.listConnections(f'{node}.inMesh'):
+                if cmds.listConnections(f"{node}.inMesh"):
                     if cmds.ls(node, noIntermediate=True):
                         list_shape_nodes_connected.add(node)
         return list_shape_nodes_connected
 
-    if cmds.listConnections(f'{geometry_name}.inMesh'):
+    if cmds.listConnections(f"{geometry_name}.inMesh"):
         list_nodes_backwards = cmds.listHistory(geometry_name)
         list_shape_nodes_connected = set()
         for node in list_nodes_backwards:
             if cmds.objectType(node, isType="mesh"):
-                if cmds.listConnections(f'{node}.outMesh'):
+                if cmds.listConnections(f"{node}.outMesh"):
                     list_shape_nodes_connected.add(node)
         return list_shape_nodes_connected.pop()
 
 
 def run_relax_sculpt_mode(
-        list_geo_to_relax: Union[str, List[str], Set[str]],
-        relax_till_done: bool):
+    list_geo_to_relax: Union[str, List[str], Set[str]], relax_till_done: bool
+):
     """Relax the input mesh using the relax inside the sculpt mode.
 
     Args:
@@ -2738,31 +2871,36 @@ def run_relax_sculpt_mode(
 
     for mesh in list_geo_to_relax:
         if cmds.polyEvaluate(mesh, shell=True) != 1:
-            message(f"The mesh: {mesh} appears to have multiple shell. The sculpt mode do not work",
-                    raise_error=True)
+            message(
+                f"The mesh: {mesh} appears to have multiple shell. The sculpt mode do not work",
+                raise_error=True,
+            )
 
     # disable the highlighting. Optional but better in sculpting mode.
     is_selection_highlight_enabled = {}
     for panel in cmds.getPanel(type="modelPanel"):
         cmds.modelEditor(panel, query=True, selectionHiliteDisplay=True)
-        is_selection_highlight_enabled[panel] = cmds.modelEditor(panel, query=True,
-                                                                 selectionHiliteDisplay=True)
+        is_selection_highlight_enabled[panel] = cmds.modelEditor(
+            panel, query=True, selectionHiliteDisplay=True
+        )
         cmds.modelEditor(panel, edit=True, selectionHiliteDisplay=False)
 
     if relax_till_done:
-        main_progress_bar = mel.eval('$tmp = $gMainProgressBar')
-        cmds.progressBar(main_progress_bar,
-                         edit=True,
-                         beginProgress=True,
-                         isInterruptable=True,
-                         status='Relaxing till even ...',
-                         )
+        main_progress_bar = mel.eval("$tmp = $gMainProgressBar")
+        cmds.progressBar(
+            main_progress_bar,
+            edit=True,
+            beginProgress=True,
+            isInterruptable=True,
+            status="Relaxing till even ...",
+        )
         dict_mesh_and_mfn_mesh = {}
         selection_list = om2.MSelectionList()
         for counter, mesh in enumerate(list_geo_to_relax):
             selection_list.add(mesh)
             dict_mesh_and_mfn_mesh[mesh] = om2.MFnMesh(
-                selection_list.getDagPath(counter))
+                selection_list.getDagPath(counter)
+            )
 
     # relax the inner vertexes
     mesh_to_select = set(f"{mesh}.vtx[*]" for mesh in list_geo_to_relax)
@@ -2777,50 +2915,48 @@ def run_relax_sculpt_mode(
     cmds.SetMeshFreezeTool()
     cmds.SculptMeshUnfreezeAll()
     if cmds.currentCtx() != "selectSuperContext":
-        cmds.setToolTo('selectSuperContext')
+        cmds.setToolTo("selectSuperContext")
     cmds.select(vertexes_inside_to_pin_full_name)
-    cmds.sculptMeshCacheCtx(
-        "sculptMeshCacheContext", edit=True, freezeSelection=100)
+    cmds.sculptMeshCacheCtx("sculptMeshCacheContext", edit=True, freezeSelection=100)
     cmds.SetMeshRelaxTool()
-    cmds.sculptMeshCacheCtx("sculptMeshCacheContext", edit=True,
-                            wireframeColor=[0, 0, 0], wireframeAlpha=1)
+    cmds.sculptMeshCacheCtx(
+        "sculptMeshCacheContext", edit=True, wireframeColor=[0, 0, 0], wireframeAlpha=1
+    )
     stop_relax = False
     while stop_relax is not True:
         if relax_till_done:
             if cmds.progressBar(main_progress_bar, query=True, isCancelled=True):
                 stop_relax = True
-                cmds.progressBar(main_progress_bar,
-                                 edit=True, endProgress=True)
+                cmds.progressBar(main_progress_bar, edit=True, endProgress=True)
             dict_points_position_before_relax = {}
             for mesh, mfn_mesh in dict_mesh_and_mfn_mesh.items():
                 dict_points_position_before_relax[mesh] = mfn_mesh.getPoints()
         else:
             stop_relax = True
         for i in range(0, 100):  # pylint: disable=unused-variable
-            cmds.sculptMeshCacheCtx(
-                "sculptMeshCacheContext", edit=True, flood=100)
+            cmds.sculptMeshCacheCtx("sculptMeshCacheContext", edit=True, flood=100)
 
         if relax_till_done:
             dict_points_position_after_relax = {}
             for mesh, mfn_mesh in dict_mesh_and_mfn_mesh.items():
                 dict_points_position_after_relax[mesh] = mfn_mesh.getPoints()
             for mesh in list_geo_to_relax:
-                point_before_relax = dict_points_position_before_relax.get(
-                    mesh)
+                point_before_relax = dict_points_position_before_relax.get(mesh)
                 point_after_relax = dict_points_position_after_relax.get(mesh)
                 # Check if the two point arrays are equal
-                for (point_before, point_after) in zip(point_before_relax, point_after_relax):
+                for point_before, point_after in zip(
+                    point_before_relax, point_after_relax
+                ):
                     if not point_before.isEquivalent(point_after, 0.000001):
                         break
                 else:
                     stop_relax = True
-                    cmds.progressBar(main_progress_bar,
-                                     edit=True, endProgress=True)
+                    cmds.progressBar(main_progress_bar, edit=True, endProgress=True)
 
     cmds.SetMeshFreezeTool()
     cmds.SculptMeshUnfreezeAll()
     if cmds.currentCtx() != "selectSuperContext":
-        cmds.setToolTo('selectSuperContext')
+        cmds.setToolTo("selectSuperContext")
 
     for panel, is_selection_highlight_enabled in is_selection_highlight_enabled.items():
         if is_selection_highlight_enabled:
@@ -2854,24 +2990,22 @@ def relax_flat_mesh(
 
     dict_patent_and_child_smart_mirror = {}
     for geo_to_relax in list_geo_to_relax.copy():
-        if cmds.listConnections(f'{geo_to_relax}.outMesh'):
+        if cmds.listConnections(f"{geo_to_relax}.outMesh"):
             list_slave_mirror_node = get_smart_mirror_twin(geo_to_relax)
             dict_patent_and_child_smart_mirror[geo_to_relax] = list_slave_mirror_node
             # if mesh is parent smart mirror than relax also the children
             if isinstance(list_slave_mirror_node, set):
                 for slave in list_slave_mirror_node:
                     name_slave_mesh = cmds.listRelatives(
-                        slave,
-                        parent=True,
-                        type='transform')[0]
+                        slave, parent=True, type="transform"
+                    )[0]
                     list_geo_to_relax.add(name_slave_mesh)
             if isinstance(list_slave_mirror_node, str):
                 name_slave_mesh = cmds.listRelatives(
-                    list_slave_mirror_node,
-                    parent=True,
-                    type='transform')[0]
+                    list_slave_mirror_node, parent=True, type="transform"
+                )[0]
                 list_geo_to_relax.add(name_slave_mesh)
-        if cmds.listConnections(f'{geo_to_relax}.inMesh'):
+        if cmds.listConnections(f"{geo_to_relax}.inMesh"):
             parent_mesh = get_smart_mirror_twin(geo_to_relax)
             if not parent_mesh in dict_patent_and_child_smart_mirror:
                 dict_patent_and_child_smart_mirror[parent_mesh] = set()
@@ -2881,12 +3015,21 @@ def relax_flat_mesh(
         raise_error_if_mesh_is_unflat(geo_to_relax)
 
     for geo_to_relax in list_geo_to_relax:
-        cmds.transferAttributes(flatten_ref_geometry, geo_to_relax,
-                                transferPositions=0, transferNormals=0, transferUVs=2,
-                                transferColors=2, sampleSpace=0, sourceUvSpace="map1",
-                                targetUvSpace="map1", searchMethod=3, flipUVs=0,
-                                colorBorders=1)
-        cmds.setAttr(geo_to_relax + '.displayColors', 0)
+        cmds.transferAttributes(
+            flatten_ref_geometry,
+            geo_to_relax,
+            transferPositions=0,
+            transferNormals=0,
+            transferUVs=2,
+            transferColors=2,
+            sampleSpace=0,
+            sourceUvSpace="map1",
+            targetUvSpace="map1",
+            searchMethod=3,
+            flipUVs=0,
+            colorBorders=1,
+        )
+        cmds.setAttr(geo_to_relax + ".displayColors", 0)
         raise_error_if_mesh_has_missing_uvs(geo_to_relax)
         raise_error_if_mesh_has_overlapping_uvs(geo_to_relax)
     for geo_to_relax in list_geo_to_relax:
@@ -2894,37 +3037,42 @@ def relax_flat_mesh(
 
     # find the all the UV master point of the "posed_ref_geometry_name" and store their coordinate
     dict_cord_master_uv_point = dict_cord_master_uv_points_from_posed_mesh(
-        posed_ref_geometry)
+        posed_ref_geometry
+    )
 
     list_perimeter_curve = set()
     for curve in return_curve_in_scene()[0]:
-        if cmds.attributeQuery("connection_between_perimeter_and_pointer_curve",
-                               node=curve, exists=True):
-            if cmds.attributeQuery("connection_between_label_and_perimeter_curve",
-                                   node=curve, exists=True):
+        if cmds.attributeQuery(
+            "connection_between_perimeter_and_pointer_curve", node=curve, exists=True
+        ):
+            if cmds.attributeQuery(
+                "connection_between_label_and_perimeter_curve", node=curve, exists=True
+            ):
                 list_perimeter_curve.add(curve)
 
     for curve in list_perimeter_curve:
         cmds.move(0, 0, -0.001, curve, absolute=True)  # better for hitest()
     list_mesh_to_relax_precisely = set()  # to relax until they are perfectly spaced
     for geo_to_relax in list_geo_to_relax:
-
         list_input_index_master_uv_point = re_find_uv_master_point(
-            dict_cord_master_uv_point, dict_uv_cord_to_compare_to(geo_to_relax), 0.0001)
+            dict_cord_master_uv_point, dict_uv_cord_to_compare_to(geo_to_relax), 0.0001
+        )
         list_edge_loop_path = create_curve(
             geo_to_relax,
             list_input_index_master_uv_point,
-            just_return_list_edge_loop_full_name=True
+            just_return_list_edge_loop_full_name=True,
         )
 
         for edge_loop_path in list_edge_loop_path:
             ordered_vertex_loop_path = ordered_vertex_loop_from_edge_loop(
-                list(edge_loop_path))
+                list(edge_loop_path)
+            )
 
             list_curve_pos = []
             for vertex in ordered_vertex_loop_path:
-                list_curve_pos.append(cmds.xform(
-                    vertex, worldSpace=1, translation=1, query=1))
+                list_curve_pos.append(
+                    cmds.xform(vertex, worldSpace=1, translation=1, query=1)
+                )
 
             closest_curve = None
             closest_distance = float("inf")
@@ -2937,10 +3085,10 @@ def relax_flat_mesh(
                 for vertex_position in list_curve_pos:
                     vertex_position = om2.MPoint(vertex_position)
                     distance_from_vertex = mfn_curve.distanceToPoint(
-                        vertex_position, space=om2.MSpace.kWorld)
+                        vertex_position, space=om2.MSpace.kWorld
+                    )
                     dict_vertex_distance[perimeter_curve] += distance_from_vertex
-                dict_vertex_distance[perimeter_curve] /= len(
-                    ordered_vertex_loop_path)
+                dict_vertex_distance[perimeter_curve] /= len(ordered_vertex_loop_path)
 
             closest_curve = None
             closest_distance = float("inf")
@@ -2954,39 +3102,39 @@ def relax_flat_mesh(
             distance_other_direction = 0
             counter_reversed = list(range(len(ordered_vertex_loop_path)))[::-1]
             if cmds.getAttr(f"{closest_curve}.form") == 0:
-                len_ratio = len(list_curve_pos)-1
+                len_ratio = len(list_curve_pos) - 1
             else:
                 len_ratio = len(list_curve_pos)
                 list_mesh_to_relax_precisely.add(geo_to_relax)
             for counter, vertex in enumerate(ordered_vertex_loop_path):
-                ratio_pos = float(counter)/float(len_ratio)
-                pos_cv = cmds.pointOnCurve(
-                    closest_curve, top=True, pr=ratio_pos)
-                ratio_pos_reversed = float(
-                    counter_reversed[counter])/float(len_ratio)
+                ratio_pos = float(counter) / float(len_ratio)
+                pos_cv = cmds.pointOnCurve(closest_curve, top=True, pr=ratio_pos)
+                ratio_pos_reversed = float(counter_reversed[counter]) / float(len_ratio)
                 pos_cv_reversed = cmds.pointOnCurve(
-                    closest_curve, top=True, pr=ratio_pos_reversed)
+                    closest_curve, top=True, pr=ratio_pos_reversed
+                )
                 cord_vertex_to_move = cmds.xform(
-                    vertex, worldSpace=True, translation=True, q=True)
-                distance_first_direction += math.dist(
-                    cord_vertex_to_move, pos_cv)
+                    vertex, worldSpace=True, translation=True, q=True
+                )
+                distance_first_direction += math.dist(cord_vertex_to_move, pos_cv)
                 distance_other_direction += math.dist(
-                    cord_vertex_to_move, pos_cv_reversed)
+                    cord_vertex_to_move, pos_cv_reversed
+                )
             for counter, vertex in enumerate(ordered_vertex_loop_path):
                 if distance_first_direction < distance_other_direction:
-                    ratio_pos = float(counter)/float(len_ratio)
-                    pos_cv = cmds.pointOnCurve(
-                        closest_curve, top=True, pr=ratio_pos)
+                    ratio_pos = float(counter) / float(len_ratio)
+                    pos_cv = cmds.pointOnCurve(closest_curve, top=True, pr=ratio_pos)
                 else:
-                    ratio_pos_reversed = float(
-                        counter_reversed[counter])/float(len_ratio)
+                    ratio_pos_reversed = float(counter_reversed[counter]) / float(
+                        len_ratio
+                    )
                     pos_cv = cmds.pointOnCurve(
-                        closest_curve, top=True, pr=ratio_pos_reversed)
+                        closest_curve, top=True, pr=ratio_pos_reversed
+                    )
                 cmds.move(pos_cv[0], pos_cv[1], pos_cv[2], vertex, a=True)
     if list_mesh_to_relax_precisely:
         # workaround for mesh that have a closed curve
-        run_relax_sculpt_mode(
-            list_mesh_to_relax_precisely, relax_till_done=True)
+        run_relax_sculpt_mode(list_mesh_to_relax_precisely, relax_till_done=True)
         for mesh in list_mesh_to_relax_precisely:
             # is the mesh is a closed one sometimes flip
             cmds.polyNormalPerVertex(mesh, xyz=(0, 0, 1))
@@ -2994,11 +3142,19 @@ def relax_flat_mesh(
 
     for mirror_parent in dict_patent_and_child_smart_mirror:
         cmds.transferAttributes(
-            flatten_ref_geometry, mirror_parent,
-            transferPositions=0, transferNormals=0, transferUVs=2,
-            transferColors=2, sampleSpace=0, sourceUvSpace="map1",
-            targetUvSpace="map1", searchMethod=3, flipUVs=0,
-            colorBorders=1)
+            flatten_ref_geometry,
+            mirror_parent,
+            transferPositions=0,
+            transferNormals=0,
+            transferUVs=2,
+            transferColors=2,
+            sampleSpace=0,
+            sourceUvSpace="map1",
+            targetUvSpace="map1",
+            searchMethod=3,
+            flipUVs=0,
+            colorBorders=1,
+        )
         cmds.delete(mirror_parent, constructionHistory=1)
     list_mirror_mesh_to_rebind_labels = set()
     for mirror_parent, list_mirror_mesh in dict_patent_and_child_smart_mirror.items():
@@ -3009,35 +3165,45 @@ def relax_flat_mesh(
             selection_list.add(mirror_mesh)
             mfn_mesh_smart_mirror = om2.MFnMesh(selection_list.getDagPath(0))
             cord_point_before_smart_mirror = mfn_mesh_smart_mirror.getPoints()
-            cmds.connectAttr(f"{mirror_parent}.outMesh", f"{mirror_mesh}.inMesh",
-                             force=True)
+            cmds.connectAttr(
+                f"{mirror_parent}.outMesh", f"{mirror_mesh}.inMesh", force=True
+            )
             mfn_mesh_smart_mirror.setPoints(cord_point_before_smart_mirror)
             cmds.transferAttributes(
-                flatten_ref_geometry, mirror_mesh,
-                transferPositions=0, transferNormals=0, transferUVs=2,
-                transferColors=2, sampleSpace=0, sourceUvSpace="map1",
-                targetUvSpace="map1", searchMethod=3, flipUVs=0,
-                colorBorders=1)
+                flatten_ref_geometry,
+                mirror_mesh,
+                transferPositions=0,
+                transferNormals=0,
+                transferUVs=2,
+                transferColors=2,
+                sampleSpace=0,
+                sourceUvSpace="map1",
+                targetUvSpace="map1",
+                searchMethod=3,
+                flipUVs=0,
+                colorBorders=1,
+            )
             # technically is not necessary but connecting the .outMesh and .inMesh
             # for some reason automatically clean the content of the quick set
             # so is it necessary to recalculate them.
             list_mirror_mesh_to_rebind_labels.add(mirror_mesh)
 
-    bind_label_indicator(list_input_geometry=list_mirror_mesh_to_rebind_labels,
-                         bool_create_label=False,
-                         bool_unhide_updated_label=False,
-                         bool_just_return_found_label_curve=False,
-                         bool_check_if_proper_input=True,
-                         posed_ref_geometry=posed_ref_geometry,
-                         dict_cord_master_uv_point=None,
-                         list_perimeter_curve=None)
+    bind_label_indicator(
+        list_input_geometry=list_mirror_mesh_to_rebind_labels,
+        bool_create_label=False,
+        bool_unhide_updated_label=False,
+        bool_just_return_found_label_curve=False,
+        bool_check_if_proper_input=True,
+        posed_ref_geometry=posed_ref_geometry,
+        dict_cord_master_uv_point=None,
+        list_perimeter_curve=None,
+    )
 
     for curve in list_perimeter_curve:
         cmds.move(0, 0, 0.001, curve, absolute=True)  # better for hitest()
     for mesh in list_geo_to_relax:
-        cmds.setAttr(mesh + '.displayColors', 0)
+        cmds.setAttr(mesh + ".displayColors", 0)
     cmds.select(list_geo_to_relax)
-
 
 
 def create_and_place_mirror(
@@ -3059,8 +3225,7 @@ def create_and_place_mirror(
         return abs(value_01 - value_02) / ((value_01 + value_02) / 2) * 100
 
     if len(list_mesh_to_mirror) % 2 == 1 or not isinstance(list_mesh_to_mirror, list):
-        message("You cannot select an odd number of meshes.",
-                raise_error=True)
+        message("You cannot select an odd number of meshes.", raise_error=True)
         return
     list_start_mesh = list_mesh_to_mirror[::2]
     list_goal_mesh = list_mesh_to_mirror[1::2]
@@ -3084,16 +3249,11 @@ def create_and_place_mirror(
             list_couple_skipped.append([master_mesh, slave_mesh])
             continue
 
-        bbox_start_mesh = cmds.exactWorldBoundingBox(
-            master_mesh, calculateExactly=True)
-        bbox_goal_mesh = cmds.exactWorldBoundingBox(
-            slave_mesh, calculateExactly=True)
-        x_size_start_mesh = abs(
-            bbox_start_mesh[3] - bbox_start_mesh[0])
-        y_size_start_mesh = abs(
-            bbox_start_mesh[4] - bbox_start_mesh[1])
-        z_size_start_mesh = abs(
-            bbox_start_mesh[5] - bbox_start_mesh[2])
+        bbox_start_mesh = cmds.exactWorldBoundingBox(master_mesh, calculateExactly=True)
+        bbox_goal_mesh = cmds.exactWorldBoundingBox(slave_mesh, calculateExactly=True)
+        x_size_start_mesh = abs(bbox_start_mesh[3] - bbox_start_mesh[0])
+        y_size_start_mesh = abs(bbox_start_mesh[4] - bbox_start_mesh[1])
+        z_size_start_mesh = abs(bbox_start_mesh[5] - bbox_start_mesh[2])
 
         x_size_goal_mesh = abs(bbox_goal_mesh[3] - bbox_goal_mesh[0])
         y_size_goal_mesh = abs(bbox_goal_mesh[4] - bbox_goal_mesh[1])
@@ -3103,14 +3263,11 @@ def create_and_place_mirror(
         # if one of the meshes is completely flat than do not calculate
         # the % difference for that axis
         if x_size_start_mesh != 0 and x_size_goal_mesh != 0:
-            x_diff = percentage_difference(
-                x_size_start_mesh, x_size_goal_mesh)
+            x_diff = percentage_difference(x_size_start_mesh, x_size_goal_mesh)
         if y_size_start_mesh != 0 and y_size_goal_mesh != 0:
-            y_diff = percentage_difference(
-                y_size_start_mesh, y_size_goal_mesh)
+            y_diff = percentage_difference(y_size_start_mesh, y_size_goal_mesh)
         if z_size_start_mesh != 0 and z_size_goal_mesh != 0:
-            z_diff = percentage_difference(
-                z_size_start_mesh, z_size_goal_mesh)
+            z_diff = percentage_difference(z_size_start_mesh, z_size_goal_mesh)
 
         threshold_difference_size = 0.1
         # if the size difference is higher than 0.1% than skip
@@ -3135,25 +3292,33 @@ def create_and_place_mirror(
         cmds.xform(master_mesh, centerPivots=1)
         cmds.xform(slave_mesh, centerPivots=1)
 
-        pos_pivot_start_mesh = [(bbox_start_mesh[3] + bbox_start_mesh[0])/2,
-                                ((bbox_start_mesh[4] +
-                                    bbox_start_mesh[1])/2),
-                                ((bbox_start_mesh[5] + bbox_start_mesh[2])/2)]
-        pos_pivot_goal_mesh = [(bbox_goal_mesh[3] + bbox_goal_mesh[0])/2,
-                               ((bbox_goal_mesh[4] +
-                                 bbox_goal_mesh[1])/2),
-                               ((bbox_goal_mesh[5] + bbox_goal_mesh[2])/2)]
+        pos_pivot_start_mesh = [
+            (bbox_start_mesh[3] + bbox_start_mesh[0]) / 2,
+            ((bbox_start_mesh[4] + bbox_start_mesh[1]) / 2),
+            ((bbox_start_mesh[5] + bbox_start_mesh[2]) / 2),
+        ]
+        pos_pivot_goal_mesh = [
+            (bbox_goal_mesh[3] + bbox_goal_mesh[0]) / 2,
+            ((bbox_goal_mesh[4] + bbox_goal_mesh[1]) / 2),
+            ((bbox_goal_mesh[5] + bbox_goal_mesh[2]) / 2),
+        ]
 
-        mesh_smart_mirror = cmds.duplicate(master_mesh,
-                                           n=f"{master_mesh.split('|')[-1]}_mirror"
-                                           )[0]
-        cmds.move(pos_pivot_goal_mesh[0]-pos_pivot_start_mesh[0], pos_pivot_goal_mesh[1] -
-                  pos_pivot_start_mesh[1],
-                  pos_pivot_goal_mesh[2]-pos_pivot_start_mesh[2],
-                  mesh_smart_mirror, relative=True)
+        mesh_smart_mirror = cmds.duplicate(
+            master_mesh, n=f"{master_mesh.split('|')[-1]}_mirror"
+        )[0]
+        cmds.move(
+            pos_pivot_goal_mesh[0] - pos_pivot_start_mesh[0],
+            pos_pivot_goal_mesh[1] - pos_pivot_start_mesh[1],
+            pos_pivot_goal_mesh[2] - pos_pivot_start_mesh[2],
+            mesh_smart_mirror,
+            relative=True,
+        )
 
         edge_border_goal_mesh = add_full_name_to_index_component(
-            get_component_on_border(slave_mesh, mode="edge"), geometry_name=slave_mesh, mode="e")
+            get_component_on_border(slave_mesh, mode="edge"),
+            geometry_name=slave_mesh,
+            mode="e",
+        )
         cmds.select(edge_border_goal_mesh)
         dummy_curve_perimeter_goal_mesh_unflipped = cmds.polyToCurve(
             form=1,  # form=1 (always open)
@@ -3162,8 +3327,7 @@ def create_and_place_mirror(
             conformToSmoothMeshPreview=1,
             constructionHistory=False,
         )[0]
-        cmds.setAttr(f"{slave_mesh}.scaleX",
-                     cmds.getAttr(f"{slave_mesh}.scaleX") * -1)
+        cmds.setAttr(f"{slave_mesh}.scaleX", cmds.getAttr(f"{slave_mesh}.scaleX") * -1)
         cmds.select(edge_border_goal_mesh)
         dummy_curve_perimeter_goal_mesh_flipped = cmds.polyToCurve(
             form=1,  # form=1 (always open)
@@ -3172,16 +3336,13 @@ def create_and_place_mirror(
             conformToSmoothMeshPreview=1,
             constructionHistory=False,
         )[0]
-        cmds.setAttr(f"{slave_mesh}.scaleX",
-                     cmds.getAttr(f"{slave_mesh}.scaleX")*-1)
+        cmds.setAttr(f"{slave_mesh}.scaleX", cmds.getAttr(f"{slave_mesh}.scaleX") * -1)
 
         selection_list = om2.MSelectionList()
         selection_list.add(dummy_curve_perimeter_goal_mesh_unflipped)
-        mfn_curve_unflipped = om2.MFnNurbsCurve(
-            selection_list.getDagPath(0))
+        mfn_curve_unflipped = om2.MFnNurbsCurve(selection_list.getDagPath(0))
         selection_list.add(dummy_curve_perimeter_goal_mesh_flipped)
-        mfn_curve_flipped = om2.MFnNurbsCurve(
-            selection_list.getDagPath(1))
+        mfn_curve_flipped = om2.MFnNurbsCurve(selection_list.getDagPath(1))
         selection_list.add(mesh_smart_mirror)
         mfn_smart_mirror = om2.MFnMesh(selection_list.getDagPath(2))
 
@@ -3189,47 +3350,63 @@ def create_and_place_mirror(
         distance_start_mesh_flipped = 0
         for vertex in get_component_on_border(master_mesh, mode="vtx"):
             pos_vtx_point_smart_mirror = mfn_smart_mirror.getPoint(
-                vertex, space=om2.MSpace.kWorld)
+                vertex, space=om2.MSpace.kWorld
+            )
             distance_start_mesh_unflipped += mfn_curve_unflipped.distanceToPoint(
-                pos_vtx_point_smart_mirror, space=om2.MSpace.kWorld)
+                pos_vtx_point_smart_mirror, space=om2.MSpace.kWorld
+            )
             distance_start_mesh_flipped += mfn_curve_flipped.distanceToPoint(
-                pos_vtx_point_smart_mirror, space=om2.MSpace.kWorld)
+                pos_vtx_point_smart_mirror, space=om2.MSpace.kWorld
+            )
 
-        cmds.delete((dummy_curve_perimeter_goal_mesh_unflipped,
-                    dummy_curve_perimeter_goal_mesh_flipped))
+        cmds.delete(
+            (
+                dummy_curve_perimeter_goal_mesh_unflipped,
+                dummy_curve_perimeter_goal_mesh_flipped,
+            )
+        )
 
         if distance_start_mesh_unflipped > distance_start_mesh_flipped:
-            cmds.setAttr(f"{mesh_smart_mirror}.scaleX",
-                         cmds.getAttr(f"{mesh_smart_mirror}.scaleX")*-1)
+            cmds.setAttr(
+                f"{mesh_smart_mirror}.scaleX",
+                cmds.getAttr(f"{mesh_smart_mirror}.scaleX") * -1,
+            )
 
         cmds.connectAttr(
-            f"{master_mesh}.outMesh", f"{mesh_smart_mirror}.inMesh", force=True)
+            f"{master_mesh}.outMesh", f"{mesh_smart_mirror}.inMesh", force=True
+        )
         cmds.transferAttributes(
-            flatten_ref_geometry, mesh_smart_mirror,
-            transferPositions=0, transferNormals=0, transferUVs=2,
-            transferColors=2, sampleSpace=0, sourceUvSpace="map1",
-            targetUvSpace="map1", searchMethod=3, flipUVs=0,
-            colorBorders=1)
+            flatten_ref_geometry,
+            mesh_smart_mirror,
+            transferPositions=0,
+            transferNormals=0,
+            transferUVs=2,
+            transferColors=2,
+            sampleSpace=0,
+            sourceUvSpace="map1",
+            targetUvSpace="map1",
+            searchMethod=3,
+            flipUVs=0,
+            colorBorders=1,
+        )
         # cosmetics changes
         cmds.setAttr(f"{slave_mesh}.visibility", 0)
-        cmds.setAttr(f'{master_mesh}.useOutlinerColor', True)
-        cmds.setAttr(
-            f'{master_mesh}.outlinerColor', 0, 1, 0, 'float3')
-        cmds.setAttr(
-            f'{master_mesh}.overrideColorRGB', 0, 0.3, 0, 'float3')
-        cmds.setAttr(f'{master_mesh}.overrideRGBColors', True)
-        cmds.setAttr(f'{master_mesh}.overrideEnabled', True)
-        cmds.setAttr(f'{mesh_smart_mirror}.useOutlinerColor', True)
-        cmds.setAttr(f'{mesh_smart_mirror}.outlinerColor',
-                     0, 0, 1, 'float3')
-        cmds.setAttr(f'{mesh_smart_mirror}.overrideDisplayType', 2)
-        cmds.setAttr(f'{mesh_smart_mirror}.overrideEnabled', True)
+        cmds.setAttr(f"{master_mesh}.useOutlinerColor", True)
+        cmds.setAttr(f"{master_mesh}.outlinerColor", 0, 1, 0, "float3")
+        cmds.setAttr(f"{master_mesh}.overrideColorRGB", 0, 0.3, 0, "float3")
+        cmds.setAttr(f"{master_mesh}.overrideRGBColors", True)
+        cmds.setAttr(f"{master_mesh}.overrideEnabled", True)
+        cmds.setAttr(f"{mesh_smart_mirror}.useOutlinerColor", True)
+        cmds.setAttr(f"{mesh_smart_mirror}.outlinerColor", 0, 0, 1, "float3")
+        cmds.setAttr(f"{mesh_smart_mirror}.overrideDisplayType", 2)
+        cmds.setAttr(f"{mesh_smart_mirror}.overrideEnabled", True)
 
         list_couple_done.append([master_mesh, mesh_smart_mirror])
 
     if list_couple_skipped:
         message(
-            f"Some couple was skipped. {len(list_couple_skipped)}", raise_error=False)
+            f"Some couple was skipped. {len(list_couple_skipped)}", raise_error=False
+        )
     return list_couple_done, list_couple_skipped
 
 
@@ -3245,18 +3422,19 @@ def reconstruct_mesh(
         posed_ref_geometry (str): the posed ref version of the flatten geometry to relax.
         flatten_ref_geometry (str): the flatten ref version of the flatten geometry to relax.
     """
+
     # TODO: bug fix. the cone do not work. Closed curve not supported
     # TODO: new function: position the vertex in the exact position and not an approximate one
     def percentage_difference(value_01: Union[int, float], value_02: Union[int, float]):
         return abs(value_01 - value_02) / ((value_01 + value_02) / 2) * 100
 
-    area_flatten_ref = cmds.polyEvaluate(
-        flatten_ref_geometry, worldArea=True)
+    area_flatten_ref = cmds.polyEvaluate(flatten_ref_geometry, worldArea=True)
 
-    if len(list_geo_to_reconstruct) != cmds.polyEvaluate(posed_ref_geometry, uvShell=True):
+    if len(list_geo_to_reconstruct) != cmds.polyEvaluate(
+        posed_ref_geometry, uvShell=True
+    ):
         message("the number of UV shell do not match up", raise_error=True)
-    area_uv_flatten_ref = cmds.polyEvaluate(
-        flatten_ref_geometry, uvArea=True)
+    area_uv_flatten_ref = cmds.polyEvaluate(flatten_ref_geometry, uvArea=True)
     area_selected_mesh = float()
     area_uv_selected_mesh = float()
     for mesh in list_geo_to_reconstruct:
@@ -3266,12 +3444,14 @@ def reconstruct_mesh(
     area_diff = percentage_difference(area_flatten_ref, area_selected_mesh)
     if area_diff > 0.1:
         message(
-            f"the area difference is too different: {str(area_diff)}", raise_error=True)
-    area_uv_diff = percentage_difference(
-        area_uv_flatten_ref, area_uv_selected_mesh)
+            f"the area difference is too different: {str(area_diff)}", raise_error=True
+        )
+    area_uv_diff = percentage_difference(area_uv_flatten_ref, area_uv_selected_mesh)
     if area_uv_diff > 0.1:
-        message(f"the UV area difference is too different: {str(area_uv_diff)}",
-                raise_error=True)
+        message(
+            f"the UV area difference is too different: {str(area_uv_diff)}",
+            raise_error=True,
+        )
 
     for mesh in list_geo_to_reconstruct:
         raise_error_if_mesh_has_missing_uvs(mesh)
@@ -3286,41 +3466,54 @@ def reconstruct_mesh(
         bool_check_if_proper_input=True,
         posed_ref_geometry=posed_ref_geometry,
         dict_cord_master_uv_point=None,
-        list_perimeter_curve=None)
+        list_perimeter_curve=None,
+    )
     for label_curve in list_label_curve:
-        if cmds.getAttr(label_curve + '.overrideColor') == 13:
+        if cmds.getAttr(label_curve + ".overrideColor") == 13:
             message("The topology is not right.", raise_error=True)
     mesh_to_recontract = duplicate_mesh_without_set(list_geo_to_reconstruct)
     set_extra_shape_node_to_delete = set()
     for mesh in mesh_to_recontract:
         # if the mesh could have extra shape node. Those extra shape nodes
         # create ugly empty groups node even when running cmds.polyUnite()
-        extra_shape_node_to_delete = cmds.listRelatives(
-            mesh, shapes=True, path=True)
+        extra_shape_node_to_delete = cmds.listRelatives(mesh, shapes=True, path=True)
         set_extra_shape_node_to_delete.update(extra_shape_node_to_delete[1:])
     cmds.delete(set_extra_shape_node_to_delete)
     mesh_merged = cmds.polyUnite(
-        mesh_to_recontract, constructionHistory=0, centerPivot=1)[0]
+        mesh_to_recontract, constructionHistory=0, centerPivot=1
+    )[0]
     cmds.delete(mesh_merged, constructionHistory=True)
-    cmds.transferAttributes(posed_ref_geometry, mesh_merged,
-                            transferPositions=1, transferNormals=0, transferUVs=2,
-                            transferColors=2, sampleSpace=3, sourceUvSpace="map1",
-                            targetUvSpace="map1", searchMethod=3, flipUVs=0,
-                            colorBorders=1)
+    cmds.transferAttributes(
+        posed_ref_geometry,
+        mesh_merged,
+        transferPositions=1,
+        transferNormals=0,
+        transferUVs=2,
+        transferColors=2,
+        sampleSpace=3,
+        sourceUvSpace="map1",
+        targetUvSpace="map1",
+        searchMethod=3,
+        flipUVs=0,
+        colorBorders=1,
+    )
     cmds.delete(mesh_merged, constructionHistory=True)
     dict_cord_master_uv_point = dict_cord_master_uv_points_from_posed_mesh(
-        posed_ref_geometry)
+        posed_ref_geometry
+    )
     list_input_index_master_uv_point = re_find_uv_master_point(
-        dict_cord_master_uv_point, dict_uv_cord_to_compare_to(mesh_merged), 0.0001)
+        dict_cord_master_uv_point, dict_uv_cord_to_compare_to(mesh_merged), 0.0001
+    )
     list_edge_loop_path = create_curve(
         mesh_merged,
         list_input_index_master_uv_point,
-        just_return_list_edge_loop_full_name=True
+        just_return_list_edge_loop_full_name=True,
     )
     dict_curve_and_list_vertex_loop = {}
     for edge_loop_path in list_edge_loop_path:
         ordered_vertex_loop_path = ordered_vertex_loop_from_edge_loop(
-            list(edge_loop_path))
+            list(edge_loop_path)
+        )
         # in this case the mesh is posed so it is better to disable form=2 (best guess)
         # and use form=0 (always open)
         cmds.select(edge_loop_path)
@@ -3332,65 +3525,88 @@ def reconstruct_mesh(
             conformToSmoothMeshPreview=1,
             constructionHistory=False,
         )[0]
-        cmds.rebuildCurve(output_curve, ch=0,
-                          s=len(ordered_vertex_loop_path)-1, d=1, tol=0)
+        cmds.rebuildCurve(
+            output_curve, ch=0, s=len(ordered_vertex_loop_path) - 1, d=1, tol=0
+        )
         dict_curve_and_list_vertex_loop[output_curve] = ordered_vertex_loop_path
 
-    for output_curve, ordered_vertex_loop_path in dict_curve_and_list_vertex_loop.items():
+    for (
+        output_curve,
+        ordered_vertex_loop_path,
+    ) in dict_curve_and_list_vertex_loop.items():
         # Check if reversing the curve is needed.
         # It the vertex would travel less in 3D space the curve is reversed.
         distance_first_direction = float()
         distance_other_direction = float()
-        counter_reversed = list(
-            range(len(ordered_vertex_loop_path)))[::-1]
+        counter_reversed = list(range(len(ordered_vertex_loop_path)))[::-1]
         for counter, vertex in enumerate(ordered_vertex_loop_path):
             pos_cv = cmds.xform(
-                f"{output_curve}.ep[{counter}]", worldSpace=True, translation=True, q=True)
+                f"{output_curve}.ep[{counter}]",
+                worldSpace=True,
+                translation=True,
+                q=True,
+            )
             pos_cv_reversed = cmds.xform(
-                f"{output_curve}.ep[{counter_reversed[counter]}]", worldSpace=True,
-                translation=True, q=True)
+                f"{output_curve}.ep[{counter_reversed[counter]}]",
+                worldSpace=True,
+                translation=True,
+                q=True,
+            )
             cord_vertex_to_move = cmds.xform(
-                vertex, worldSpace=True, translation=True, q=True)
-            distance_first_direction += math.dist(
-                cord_vertex_to_move, pos_cv)
-            distance_other_direction += math.dist(
-                cord_vertex_to_move, pos_cv_reversed)
+                vertex, worldSpace=True, translation=True, q=True
+            )
+            distance_first_direction += math.dist(cord_vertex_to_move, pos_cv)
+            distance_other_direction += math.dist(cord_vertex_to_move, pos_cv_reversed)
         for counter, vertex in enumerate(ordered_vertex_loop_path):
             if distance_first_direction < distance_other_direction:
                 pos_cv = cmds.xform(
                     f"{output_curve}.ep[{counter}]",
-                    worldSpace=True, translation=True, q=True)
+                    worldSpace=True,
+                    translation=True,
+                    q=True,
+                )
             else:
                 pos_cv = cmds.xform(
                     f"{output_curve}.ep[{counter_reversed[counter]}]",
-                    worldSpace=True, translation=True, q=True)
+                    worldSpace=True,
+                    translation=True,
+                    q=True,
+                )
             cmds.move(pos_cv[0], pos_cv[1], pos_cv[2], vertex, a=True)
         cmds.delete(output_curve)
 
     cmds.polySetToFaceNormal(mesh_merged)
     list_geo_to_relax = cmds.polySeparate(
-        mesh_merged, name=f"{mesh_merged.split('|')[-1]}_shell_01",
-        constructionHistory=False)
+        mesh_merged,
+        name=f"{mesh_merged.split('|')[-1]}_shell_01",
+        constructionHistory=False,
+    )
     cmds.makeLive(posed_ref_geometry)
     run_relax_sculpt_mode(list_geo_to_relax, relax_till_done=False)
     cmds.makeLive(none=True)
     mesh_merged = cmds.polyUnite(
-        list_geo_to_relax, constructionHistory=False, centerPivot=1)[0]
+        list_geo_to_relax, constructionHistory=False, centerPivot=1
+    )[0]
     cmds.delete(mesh_merged, constructionHistory=True)
     mesh_merged = cmds.rename(mesh_merged, f"{posed_ref_geometry}_retopo")
 
     vertexes_border_merged_mesh = add_full_name_to_index_component(
-        get_component_on_border(mesh_merged, mode="vtx"), geometry_name=mesh_merged, mode="vtx")
+        get_component_on_border(mesh_merged, mode="vtx"),
+        geometry_name=mesh_merged,
+        mode="vtx",
+    )
     cmds.polyMergeVertex(
         vertexes_border_merged_mesh,
         distance=1,
         worldSpace=False,
         constructionHistory=True,  # by default merge but the user could edit the manipulator UI
-        )
+    )
     cmds.select(clear=True)
     # cosmetics changes
-    cmds.setAttr(f'{mesh_merged}.useOutlinerColor', True)
-    cmds.setAttr(f'{mesh_merged}.outlinerColor', 1, 0, 0, 'float3')
-    cmds.ShowManipulators(mesh_merged) # make clear that the vtx merged can be reversed if needed
+    cmds.setAttr(f"{mesh_merged}.useOutlinerColor", True)
+    cmds.setAttr(f"{mesh_merged}.outlinerColor", 1, 0, 0, "float3")
+    cmds.ShowManipulators(
+        mesh_merged
+    )  # make clear that the vtx merged can be reversed if needed
 
     return mesh_merged
